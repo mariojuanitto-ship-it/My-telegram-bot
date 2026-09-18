@@ -64,6 +64,8 @@ export type TradeOffer = {
   kind: "any" | "items" | "property";
   initiatorAsset?: OwnedItem;
   targetAsset?: OwnedItem;
+  /** Coins paid by the initiator to the target. Old saves default to 0. */
+  extraPayment?: string;
   initiatorReady: boolean;
   targetReady: boolean;
   status: "pending" | "completed" | "cancelled";
@@ -109,6 +111,7 @@ export class GameStore {
     try {
       const raw = await readFile(this.filePath, "utf8");
       this.state = { ...initialState(), ...(JSON.parse(raw) as Partial<BotState>) };
+      this.state.trades = this.state.trades.map((trade) => ({ ...trade, extraPayment: trade.extraPayment ?? "0" }));
     } catch (error: unknown) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       await this.save();
@@ -217,6 +220,16 @@ export class GameStore {
     return [...user.inventory, ...user.cars, ...user.houses].find(
       (item) => item.instanceId === instanceId,
     );
+  }
+
+  async restoreOwned(user: User, asset: OwnedItem) {
+    const item = catalogById.get(asset.catalogId);
+    if (!item || this.getOwned(user, asset.instanceId)) return false;
+    if (item.kind === "cars") user.cars.push({ ...asset, equipped: false });
+    else if (item.kind === "houses") user.houses.push({ ...asset, equipped: false });
+    else user.inventory.push({ ...asset, equipped: false });
+    await this.updateUser(user);
+    return true;
   }
 
   async addTicket(userId: number, text: string) {

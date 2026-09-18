@@ -93,6 +93,17 @@ const hatNames = brands.map((brand, index) => {
 const accessoryNames = brands.map((brand, index) =>
   index === 29 ? "Папироса RP Gold" : `${brand} ${["цепочка", "рюкзак", "очки", "браслет"][index % 4]}`,
 );
+const cigaretteNames = [
+  "Marlboro Red",
+  "Marlboro Gold",
+  "Parliament Aqua Blue",
+  "Kent Nano Silver",
+  "Winston XStyle",
+  "Camel Compact",
+  "Lucky Strike Original",
+  "Dunhill Fine Cut",
+];
+
 const carNames = [
   "ВАЗ 2107",
   "Lada Samara",
@@ -169,14 +180,15 @@ export const catalog: CatalogItem[] = [
       ? { ...item, id: 6767, name: "Золотая папироса", passivePerSecond: "100000" }
       : item,
   ),
+  ...generated("accessories", 6801, cigaretteNames, 50_000n, 5_000_000n),
   ...generated("cars", 7001, carNames, 500_000n, 100_000_000_000n),
   ...generated("houses", 8001, houseNames, 100_000n, 100_000_000_000n),
   {
     id: 67,
     kind: "cars",
-    name: "Полицейский Бет-мобиль",
-    price: "0",
-    hidden: true,
+    name: "Полицейский Бэт-мобиль с мигалками",
+    price: "25000000000",
+    imageUrl: "https://loremflickr.com/640/640/police,car,emergency,lights?lock=67",
   },
   {
     id: 9001,

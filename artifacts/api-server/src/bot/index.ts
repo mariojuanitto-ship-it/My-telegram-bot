@@ -1,5 +1,5 @@
 import { logger } from "../lib/logger";
-import { renderAssetCard, renderCharacter } from "./character";
+import { renderCharacter } from "./character";
 import {
   catalog,
   catalogById,
@@ -34,6 +34,8 @@ type Session =
   | { type: "marketTarget"; assetType: "item" | "car" | "house" }
   | { type: "marketPrice"; assetType: "item" | "car" | "house"; instanceId: string }
   | { type: "tradeTarget"; kind: "any" | "items" | "property" }
+  | { type: "tradePayment"; tradeId: number }
+  | { type: "profileTarget" }
   | { type: "adminMoneyUser" }
   | { type: "adminMoneyAmount"; targetId: number }
   | { type: "adminDonateUser" }
@@ -86,6 +88,20 @@ function itemLine(owned: OwnedItem) {
   const product = item(owned.catalogId);
   return product ? `${product.name} · ID ${product.id}${owned.equipped ? " · надето" : ""}` : `Неизвестный предмет · ID ${owned.catalogId}`;
 }
+
+const kindLabel = (product: CatalogItem) => categoryLabels[product.kind];
+
+const productPhoto = (product: CatalogItem) => {
+  if (product.imageUrl) return product.imageUrl;
+  const query = product.kind === "cars"
+    ? product.name
+    : product.kind === "houses"
+      ? "real house exterior architecture"
+      : product.name.toLowerCase().includes("папирос") || product.name.toLowerCase().includes("marlboro") || product.name.toLowerCase().includes("kent") || product.name.toLowerCase().includes("winston") || product.name.toLowerCase().includes("camel")
+        ? "cigarette pack"
+        : `${product.name} ${kindLabel(product).toLowerCase()}`;
+  return `https://loremflickr.com/640/640/${encodeURIComponent(query)}?lock=${product.id}`;
+};
 
 async function sendText(chatId: number, text: string, telegramId?: string) {
   await telegram.sendMessage(chatId, text, telegramId ? mainKeyboard(isAdmin(telegramId)) : undefined);
@@ -144,6 +160,7 @@ async function sendProfile(chatId: number, user: User) {
   const markup = inline([
     [{ text: "Инвентарь", callback_data: "inventory" }, { text: "Промокод", callback_data: "promo" }],
     [{ text: "Моё имущество", callback_data: "property" }],
+    [{ text: "👀 Смотреть профиль игрока", callback_data: "profile:other" }],
   ]);
   try {
     await telegram.sendPhoto(
@@ -158,6 +175,31 @@ async function sendProfile(chatId: number, user: User) {
     await telegram.sendMessage(chatId, profileText(user), markup);
     await telegram.sendMessage(chatId, "Выберите действие кнопками внизу.", mainKeyboard(isAdmin(user.telegramId)));
   }
+}
+
+async function showOtherProfile(chatId: number, viewer: User, targetId: number) {
+  const target = store.findUserById(targetId);
+  if (!target) {
+    await sendText(chatId, "Игрок с таким ID не найден.", viewer.telegramId);
+    return;
+  }
+  const equipped = target.inventory.filter((owned) => owned.equipped);
+  const inventory = target.inventory.length ? target.inventory.map(itemLine).join("\n") : "пусто";
+  const properties = [...target.cars.map((owned) => `🚗 ${itemLine(owned)}`), ...target.houses.map((owned) => `🏠 ${itemLine(owned)}`)];
+  const text = [
+    `Публичный профиль`,
+    `Игрок: ${userName(target)}`,
+    `ID: ${target.userId}`,
+    `Уровень: ${target.level}`,
+    ``,
+    `Одежда надета: ${equipped.length ? equipped.map(itemLine).join("\n") : "ничего"}`,
+    ``,
+    `Инвентарь (${target.inventory.length}):\n${inventory}`,
+    ``,
+    `Имущество (${target.cars.length + target.houses.length}):\n${properties.length ? properties.join("\n") : "ничего"}`,
+  ].join("\n");
+  await sendLong(chatId, text, viewer.telegramId);
+  await telegram.sendMessage(chatId, "Профиль открыт для просмотра.", inline([[{ text: "Назад в мой профиль", callback_data: "back:profile" }]]));
 }
 
 async function showStore(chatId: number, telegramId: string) {
@@ -177,6 +219,25 @@ async function showStore(chatId: number, telegramId: string) {
   );
 }
 
+async function showProduct(chatId: number, product: CatalogItem) {
+  const price = product.kind === "donate" ? donate(product.donatePrice ?? "0") : money(product.price);
+  const text = `${product.name}\nКатегория: ${kindLabel(product)}\nЦена: ${price}\nID предмета: ${product.id}`;
+  const buyCallback = product.kind === "donate" ? `buydonate:${product.id}` : `buy:${product.id}`;
+  const backCallback = product.kind === "donate" ? "catalog:donate:0" : `catalog:${product.kind}:0`;
+  try {
+    await telegram.sendPhoto(chatId, productPhoto(product), text, inline([
+      [{ text: "Купить", callback_data: buyCallback }],
+      [{ text: "Назад к каталогу", callback_data: backCallback }],
+    ]));
+  } catch (error: unknown) {
+    logTelegramError(error, "send real product photo");
+    await telegram.sendMessage(chatId, text, inline([
+      [{ text: "Купить", callback_data: buyCallback }],
+      [{ text: "Назад к каталогу", callback_data: backCallback }],
+    ]));
+  }
+}
+
 async function showCatalog(chatId: number, kind: CatalogKind, page = 0) {
   const products = kind === "donate" ? catalog.filter((entry) => entry.kind === kind) : store.itemsByKind(kind);
   const pageSize = 6;
@@ -185,7 +246,8 @@ async function showCatalog(chatId: number, kind: CatalogKind, page = 0) {
   const visible = products.slice(safePage * pageSize, (safePage + 1) * pageSize);
   const lines = visible.map((product) => `${product.name}\nЦена: ${product.kind === "donate" ? donate(product.donatePrice ?? "0") : money(product.price)} · ID ${product.id}`);
   const rows = visible.map((product) => [
-    { text: `Купить · ${product.name.slice(0, 24)}`, callback_data: product.kind === "donate" ? `buydonate:${product.id}` : `buy:${product.id}` },
+    { text: `Фото · ${product.name.slice(0, 18)}`, callback_data: `product:${product.id}` },
+    { text: "Купить", callback_data: product.kind === "donate" ? `buydonate:${product.id}` : `buy:${product.id}` },
   ]);
   const navigation: { text: string; callback_data: string }[] = [];
   if (safePage > 0) navigation.push({ text: "←", callback_data: `catalog:${kind}:${safePage - 1}` });
@@ -298,7 +360,7 @@ async function showPropertyItem(chatId: number, user: User, instanceId: string) 
   }
   const text = `${product.name}\nID предмета: ${product.id}\nСтоимость покупки: ${money(product.price)}\nЦена продажи государству: ${money((BigInt(product.price) * 70n) / 100n)}`;
   try {
-    await telegram.sendPhoto(chatId, renderAssetCard(product), text, inline([
+    await telegram.sendPhoto(chatId, productPhoto(product), text, inline([
       [{ text: "Продать государству (-30%)", callback_data: `sellproperty:${instanceId}` }],
       [{ text: "Назад к имуществу", callback_data: "property" }],
     ]));
@@ -455,17 +517,25 @@ async function joinClan(chatId: number, user: User, clanId: string) {
 
 function listingText(listing: Listing) {
   const product = item(listing.item.catalogId);
-  return product ? `${product.name} · ID ${product.id}\nЦена: ${money(listing.price)}\nПродавец ID: ${listing.sellerId}` : "Неизвестный предмет";
+  return product ? `${product.name} · ${kindLabel(product)} · ID ${product.id}\nЦена: ${money(listing.price)}\nПродавец ID: ${listing.sellerId}${listing.item.equipped ? "\nСостояние: было надето" : ""}` : "Неизвестный предмет";
 }
 
 async function showMarket(chatId: number, user: User) {
-  const listings = store.listings.filter((listing) => listing.sellerId !== user.userId).slice(0, 10);
-  const text = listings.length ? `Торговая площадка\n\n${listings.map(listingText).join("\n\n")}` : "Торговая площадка пока пуста.";
+  const listings = store.listings.slice(0, 20);
+  const text = listings.length
+    ? `Торговая площадка\n\n${listings.map((listing) => `${listing.sellerId === user.userId ? "ВАШЕ ОБЪЯВЛЕНИЕ" : "ОБЪЯВЛЕНИЕ"} #${listing.id}\n${listingText(listing)}`).join("\n\n")}`
+    : "Торговая площадка пока пуста.";
+  const listingButtons = listings.map((listing) => [
+    {
+      text: listing.sellerId === user.userId ? `Снять своё #${listing.id}` : `Купить #${listing.id}`,
+      callback_data: listing.sellerId === user.userId ? `market:cancel:${listing.id}` : `market:buy:${listing.id}`,
+    },
+  ]);
   await telegram.sendMessage(
     chatId,
     text,
     inline([
-      ...listings.map((listing) => [{ text: `Купить #${listing.id}`, callback_data: `market:buy:${listing.id}` }]),
+      ...listingButtons,
       [{ text: "Продать аксессуар/одежду", callback_data: "market:sell:item" }],
       [{ text: "Продать автомобиль", callback_data: "market:sell:car" }, { text: "Продать дом", callback_data: "market:sell:house" }],
       [{ text: "Обновить", callback_data: "market" }],
@@ -525,6 +595,18 @@ async function buyListing(chatId: number, user: User, listingId: number) {
   await store.addOwned(user, listing.item.catalogId);
   await store.updateUser(seller);
   await sendText(chatId, `Покупка на площадке успешна: ${item(listing.item.catalogId)?.name ?? "предмет"}.\nСписано: ${money(listing.price)}`, user.telegramId);
+  await sendText(Number(seller.telegramId), `Ваше объявление #${listing.id} купили за ${money(listing.price)}.`, seller.telegramId);
+}
+
+async function cancelListing(chatId: number, user: User, listingId: number) {
+  const listing = store.listings.find((entry) => entry.id === listingId && entry.sellerId === user.userId);
+  if (!listing) {
+    await sendText(chatId, "Ваше объявление не найдено.", user.telegramId);
+    return;
+  }
+  await store.removeListing(listingId);
+  await store.restoreOwned(user, listing.item);
+  await sendText(chatId, `Объявление #${listing.id} снято. Предмет возвращён в ваш инвентарь/имущество.`, user.telegramId);
 }
 
 function assetsForTrade(user: User, _kind: "any" | "items" | "property") {
@@ -563,7 +645,7 @@ async function createTrade(chatId: number, user: User, kind: "any" | "items" | "
   );
 }
 
-async function offerTrade(chatId: number, user: User, kind: "items" | "property", targetId: number, instanceId: string) {
+async function offerTrade(chatId: number, user: User, kind: "any" | "items" | "property", targetId: number, instanceId: string) {
   const target = store.findUserById(targetId);
   const owned = assetsForTrade(user, kind).find((entry) => entry.instanceId === instanceId);
   if (!target || !owned) {
@@ -578,8 +660,9 @@ async function offerTrade(chatId: number, user: User, kind: "items" | "property"
     initiatorReady: false,
     targetReady: false,
     status: "pending",
+    extraPayment: "0",
   });
-  await sendText(chatId, `Предложение обмена #${trade.id} отправлено игроку ID ${targetId}.`, user.telegramId);
+  await sendText(chatId, `Предложение обмена #${trade.id} отправлено игроку ID ${targetId}. Сначала он выберет свой предмет, затем вы укажете доплату.`, user.telegramId);
   await telegram.sendMessage(
     Number(target.telegramId),
     `Игрок ID ${user.userId} предлагает обмен.\nЕго предмет: ${item(owned.catalogId)?.name ?? "Неизвестно"}\nПредложение #${trade.id}`,
@@ -611,22 +694,36 @@ function ownsAsset(user: User, asset?: OwnedItem) {
 }
 
 async function completeTrade(chatId: number, user: User, trade: TradeOffer) {
-  const otherId = trade.initiatorId === user.userId ? trade.targetId : trade.initiatorId;
-  const other = store.findUserById(otherId);
-  if (!other || !trade.initiatorAsset || !trade.targetAsset || !ownsAsset(user, trade.initiatorId === user.userId ? trade.initiatorAsset : trade.targetAsset) || !ownsAsset(other, trade.initiatorId === user.userId ? trade.targetAsset : trade.initiatorAsset)) {
+  const initiator = store.findUserById(trade.initiatorId);
+  const target = store.findUserById(trade.targetId);
+  const payment = BigInt(trade.extraPayment ?? "0");
+  if (!initiator || !target || !trade.initiatorAsset || !trade.targetAsset || !ownsAsset(initiator, trade.initiatorAsset) || !ownsAsset(target, trade.targetAsset)) {
     trade.status = "cancelled";
     await store.updateTrade(trade);
     await sendText(chatId, "Обмен отменён: один из предметов больше не принадлежит владельцу.", user.telegramId);
     return;
   }
-  await store.removeOwned(user, trade.initiatorId === user.userId ? trade.initiatorAsset : trade.targetAsset);
-  await store.removeOwned(other, trade.initiatorId === user.userId ? trade.targetAsset : trade.initiatorAsset);
-  await store.addOwned(user, trade.initiatorId === user.userId ? trade.targetAsset.catalogId : trade.initiatorAsset.catalogId);
-  await store.addOwned(other, trade.initiatorId === user.userId ? trade.initiatorAsset.catalogId : trade.targetAsset.catalogId);
+  if (BigInt(initiator.coins) < payment) {
+    trade.initiatorReady = false;
+    await store.updateTrade(trade);
+    await sendText(chatId, `У инициатора не хватает монет для доплаты ${money(payment)}. Обмен не завершён.`, user.telegramId);
+    return;
+  }
+  await store.removeOwned(initiator, trade.initiatorAsset);
+  await store.removeOwned(target, trade.targetAsset);
+  await store.addOwned(initiator, trade.targetAsset.catalogId);
+  await store.addOwned(target, trade.initiatorAsset.catalogId);
+  if (payment > 0n) {
+    initiator.coins = (BigInt(initiator.coins) - payment).toString();
+    target.coins = (BigInt(target.coins) + payment).toString();
+    await store.updateUser(initiator);
+    await store.updateUser(target);
+  }
   trade.status = "completed";
   await store.updateTrade(trade);
-  await sendText(chatId, `Обмен #${trade.id} завершён успешно.`, user.telegramId);
-  await sendText(Number(other.telegramId), `Обмен #${trade.id} завершён успешно.`, other.telegramId);
+  const paymentText = payment > 0n ? ` Доплата: ${money(payment)}.` : " Без доплаты.";
+  await sendText(chatId, `Обмен #${trade.id} завершён успешно.${paymentText}`, user.telegramId);
+  if (Number(target.telegramId) !== chatId) await sendText(Number(target.telegramId), `Обмен #${trade.id} завершён успешно.${paymentText}`, target.telegramId);
 }
 
 async function showAdmin(chatId: number) {
@@ -701,6 +798,35 @@ async function processText(chatId: number, user: User, text: string) {
   if (session.type === "tradeTarget") {
     sessions.delete(user.telegramId);
     await createTrade(chatId, user, session.kind, text);
+    return;
+  }
+  if (session.type === "profileTarget") {
+    const targetId = Number(text.trim());
+    sessions.delete(user.telegramId);
+    await showOtherProfile(chatId, user, targetId);
+    return;
+  }
+  if (session.type === "tradePayment") {
+    const payment = amountFromText(text);
+    const trade = store.trades.find((entry) => entry.id === session.tradeId && entry.initiatorId === user.userId && entry.status === "pending");
+    if (payment === undefined || !trade) {
+      await sendText(chatId, "Введите целое число 0 или больше. Например: 0", user.telegramId);
+      return;
+    }
+    if (BigInt(user.coins) < payment) {
+      await sendText(chatId, `У вас недостаточно монет для доплаты ${money(payment)}. Введите меньшую сумму.`, user.telegramId);
+      return;
+    }
+    trade.extraPayment = payment.toString();
+    await store.updateTrade(trade);
+    sessions.delete(user.telegramId);
+    const target = store.findUserById(trade.targetId);
+    await sendText(chatId, `Доплата по обмену #${trade.id}: ${money(payment)}. Нажмите «Готов», когда всё проверили.`, user.telegramId);
+    await telegram.sendMessage(chatId, "Подтвердите обмен:", inline([[{ text: "Готов", callback_data: `trade:ready:${trade.id}` }]]));
+    if (target) {
+      await sendText(Number(target.telegramId), `Инициатор добавляет доплату: ${money(payment)}. Нажмите «Готов», если согласны.`, target.telegramId);
+      await telegram.sendMessage(Number(target.telegramId), "Подтвердите обмен:", inline([[{ text: "Готов", callback_data: `trade:ready:${trade.id}` }]]));
+    }
     return;
   }
   if (session.type === "adminMoneyUser") {
@@ -867,6 +993,11 @@ async function handleMessage(message: TelegramMessage) {
     await showExchange(chatId, user);
     return;
   }
+  if (text === "👀 Другие профили" || text === "Другие профили") {
+    sessions.set(user.telegramId, { type: "profileTarget" });
+    await sendText(chatId, "Введите ID игрока, чей профиль хотите посмотреть.", user.telegramId);
+    return;
+  }
   if (text === "💼 Работы" || text === "Работы") {
     await showJobs(chatId, user);
     return;
@@ -905,6 +1036,11 @@ async function handleCallback(callback: TelegramCallbackQuery) {
     if (kind && kind in categoryLabels) await showCatalog(chatId, kind as CatalogKind, Number(page));
     return;
   }
+  if (data.startsWith("product:")) {
+    const product = item(Number(data.split(":")[1]));
+    if (product) await showProduct(chatId, product);
+    return;
+  }
   if (data.startsWith("buy:")) {
     const product = item(Number(data.split(":")[1]));
     if (product) await buyProduct(chatId, user, product);
@@ -933,6 +1069,11 @@ async function handleCallback(callback: TelegramCallbackQuery) {
       await sendProfile(chatId, user);
       await showInventoryItem(chatId, user, instanceId);
     }
+    return;
+  }
+  if (data === "profile:other") {
+    sessions.set(user.telegramId, { type: "profileTarget" });
+    await sendText(chatId, "Введите ID игрока, чей профиль хотите посмотреть.", user.telegramId);
     return;
   }
   if (data === "promo") {
@@ -1019,6 +1160,10 @@ async function handleCallback(callback: TelegramCallbackQuery) {
     await buyListing(chatId, user, Number(data.split(":")[2]));
     return;
   }
+  if (data.startsWith("market:cancel:")) {
+    await cancelListing(chatId, user, Number(data.split(":")[2]));
+    return;
+  }
   if (data === "exchange") {
     await showExchange(chatId, user);
     return;
@@ -1053,21 +1198,32 @@ async function handleCallback(callback: TelegramCallbackQuery) {
     if (trade && assetsForTrade(user, trade.kind).some((asset) => asset.instanceId === instanceId)) {
       trade.targetAsset = assetsForTrade(user, trade.kind).find((asset) => asset.instanceId === instanceId);
       await store.updateTrade(trade);
-      await sendText(chatId, `Предмет выбран. Нажмите «Готов» для подтверждения обмена #${trade.id}.`, user.telegramId);
-      await telegram.sendMessage(Number(store.findUserById(trade.initiatorId)?.telegramId), `Игрок ID ${user.userId} выбрал предмет для обмена #${trade.id}.`, inline([
-        [{ text: "Готов", callback_data: `trade:ready:${trade.id}` }],
-      ]));
+      const initiator = store.findUserById(trade.initiatorId);
+      await sendText(chatId, `Предмет выбран для обмена #${trade.id}. Инициатору предложено указать доплату.`, user.telegramId);
+      if (initiator) {
+        sessions.set(initiator.telegramId, { type: "tradePayment", tradeId: trade.id });
+        await sendText(Number(initiator.telegramId), `Введите, сколько хотите доплатить по обмену #${trade.id}. Если доплаты нет, напишите 0.`, initiator.telegramId);
+      }
     }
     return;
   }
   if (data.startsWith("trade:ready:")) {
     const trade = store.trades.find((entry) => entry.id === Number(data.split(":")[2]) && [entry.targetId, entry.initiatorId].includes(user.userId) && entry.status === "pending");
-    if (!trade) return;
+    if (!trade || !trade.initiatorAsset || !trade.targetAsset) {
+      await sendText(chatId, "Сначала оба игрока должны выбрать предметы для обмена.", user.telegramId);
+      return;
+    }
+    const payment = BigInt(trade.extraPayment ?? "0");
+    const initiator = store.findUserById(trade.initiatorId);
+    if (!initiator || BigInt(initiator.coins) < payment) {
+      await sendText(chatId, `У инициатора недостаточно монет для доплаты ${money(payment)}.`, user.telegramId);
+      return;
+    }
     if (user.userId === trade.initiatorId) trade.initiatorReady = true;
     if (user.userId === trade.targetId) trade.targetReady = true;
     await store.updateTrade(trade);
     if (trade.initiatorReady && trade.targetReady) await completeTrade(chatId, user, trade);
-    else await sendText(chatId, "Готовность сохранена. Ждём второго игрока.", user.telegramId);
+    else await sendText(chatId, `Готовность сохранена. Доплата: ${money(payment)}. Ждём второго игрока.`, user.telegramId);
     return;
   }
   if (data.startsWith("admin:")) {

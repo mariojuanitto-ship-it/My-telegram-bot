@@ -549,6 +549,11 @@ export function renderAssetCard(product: CatalogItem) {
       circle(435, 430, 32, dark);
       circle(205, 430, 13, hex("#cbd5e1"));
       circle(435, 430, 13, hex("#cbd5e1"));
+      if (product.name.toLowerCase().includes("полицейский") || product.name.toLowerCase().includes("мигалк")) {
+        rect(292, 278, 56, 10, hex("#e2e8f0"));
+        circle(305, 274, 9, hex("#ef4444"));
+        circle(335, 274, 9, hex("#2563eb"));
+      }
     }
   } else {
     rect(118, 320, 404, 200, accent);
