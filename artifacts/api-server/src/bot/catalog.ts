@@ -188,7 +188,7 @@ export const catalog: CatalogItem[] = [
     kind: "cars",
     name: "Полицейский Бэт-мобиль с мигалками",
     price: "25000000000",
-    imageUrl: "https://loremflickr.com/640/640/police,car,emergency,lights?lock=67",
+    imageUrl: "https://loremflickr.com/1024/768/batmobile,police,car,emergency?lock=67",
   },
   {
     id: 9001,

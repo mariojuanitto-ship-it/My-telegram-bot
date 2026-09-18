@@ -101,7 +101,7 @@ const productPhoto = (product: CatalogItem) => {
     jackets: "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=900&q=85",
     hats: "https://images.unsplash.com/photo-1521369909029-2afed882baee?auto=format&fit=crop&w=900&q=85",
     accessories: name.includes("папирос") || /marlboro|kent|winston|camel|dunhill/.test(name)
-      ? "https://loremflickr.com/900/900/cigarette,product?lock=6767"
+      ? "https://loremflickr.com/900/900/gold,cigarette,product?lock=6767"
       : "https://images.unsplash.com/photo-1515562141207-7a88fb7ce338?auto=format&fit=crop&w=900&q=85",
     cars: "https://images.unsplash.com/photo-1503736334956-4c8f8e92946d?auto=format&fit=crop&w=900&q=85",
     houses: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=900&q=85",
