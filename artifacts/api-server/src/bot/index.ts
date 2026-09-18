@@ -93,20 +93,47 @@ const kindLabel = (product: CatalogItem) => categoryLabels[product.kind];
 const productPhoto = (product: CatalogItem) => {
   if (product.imageUrl) return product.imageUrl;
   const name = product.name.toLowerCase();
-  const photoByKind: Partial<Record<CatalogKind, string>> = {
-    sneakers: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=900&q=85",
-    shirts: "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=900&q=85",
-    pants: "https://images.unsplash.com/photo-1542272604-787c3835535d?auto=format&fit=crop&w=900&q=85",
-    jackets: "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=900&q=85",
-    hats: "https://images.unsplash.com/photo-1521369909029-2afed882baee?auto=format&fit=crop&w=900&q=85",
+  const photoByKind: Partial<Record<CatalogKind, string[]>> = {
+    sneakers: [
+      "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=900&q=85",
+      "https://images.unsplash.com/photo-1552346154-21d32810aba3?auto=format&fit=crop&w=900&q=85",
+    ],
+    shirts: [
+      "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=900&q=85",
+      "https://images.unsplash.com/photo-1562157873-818bc0726f68?auto=format&fit=crop&w=900&q=85",
+    ],
+    pants: [
+      "https://images.unsplash.com/photo-1542272604-787c3835535d?auto=format&fit=crop&w=900&q=85",
+      "https://images.unsplash.com/photo-1473966968600-fa801b869a1a?auto=format&fit=crop&w=900&q=85",
+    ],
+    jackets: [
+      "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=900&q=85",
+      "https://images.unsplash.com/photo-1548883354-7622d03aca27?auto=format&fit=crop&w=900&q=85",
+    ],
+    hats: [
+      "https://images.unsplash.com/photo-1521369909029-2afed882baee?auto=format&fit=crop&w=900&q=85",
+      "https://images.unsplash.com/photo-1514327605112-b887c0e61c0a?auto=format&fit=crop&w=900&q=85",
+    ],
     accessories: name.includes("папирос") || /marlboro|kent|winston|camel|dunhill/.test(name)
-      ? "https://loremflickr.com/900/900/gold,cigarette,product?lock=6767"
-      : "https://images.unsplash.com/photo-1515562141207-7a88fb7ce338?auto=format&fit=crop&w=900&q=85",
-    cars: "https://images.unsplash.com/photo-1503736334956-4c8f8e92946d?auto=format&fit=crop&w=900&q=85",
-    houses: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=900&q=85",
-    donate: "https://images.unsplash.com/photo-1611652022419-a9419f74343d?auto=format&fit=crop&w=900&q=85",
+      ? ["https://loremflickr.com/900/900/gold,cigarette,product?lock=6767"]
+      : ["https://images.unsplash.com/photo-1515562141207-7a88fb7ce338?auto=format&fit=crop&w=900&q=85"],
+    cars: [
+      "https://images.unsplash.com/photo-1503736334956-4c8f8e92946d?auto=format&fit=crop&w=900&q=85",
+      "https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?auto=format&fit=crop&w=900&q=85",
+      "https://images.unsplash.com/photo-1542362567-b07e54358753?auto=format&fit=crop&w=900&q=85",
+      "https://images.unsplash.com/photo-1553440569-bcc63803a83d?auto=format&fit=crop&w=900&q=85",
+    ],
+    houses: [
+      "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=900&q=85",
+      "https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?auto=format&fit=crop&w=900&q=85",
+      "https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?auto=format&fit=crop&w=900&q=85",
+      "https://images.unsplash.com/photo-1600047509807-ba8f99d2cdde?auto=format&fit=crop&w=900&q=85",
+      "https://images.unsplash.com/photo-1600585154526-990dced4db0d?auto=format&fit=crop&w=900&q=85",
+    ],
+    donate: ["https://images.unsplash.com/photo-1611652022419-a9419f74343d?auto=format&fit=crop&w=900&q=85"],
   };
-  return photoByKind[product.kind] ?? `https://loremflickr.com/900/900/${encodeURIComponent(kindLabel(product))}?lock=${product.id}`;
+  const photos = photoByKind[product.kind] ?? [];
+  return photos[product.id % photos.length] ?? ("https://loremflickr.com/900/900/" + encodeURIComponent(kindLabel(product)) + "?lock=" + product.id);
 };
 
 async function sendText(chatId: number, text: string, telegramId?: string) {
@@ -184,6 +211,26 @@ async function sendEquippedPhotos(chatId: number, user: User) {
   }
 }
 
+async function sendPropertyPhotos(chatId: number, user: User) {
+  const properties = [...user.cars, ...user.houses]
+    .map((owned) => item(owned.catalogId))
+    .filter((product): product is CatalogItem => Boolean(product));
+
+  if (!properties.length) return;
+  await telegram.sendMessage(chatId, "Реальные фото автомобилей и домов:");
+  for (const product of properties.slice(0, 8)) {
+    try {
+      await telegram.sendPhoto(chatId, productPhoto(product), product.name);
+    } catch (error: unknown) {
+      logTelegramError(error, "send property photo " + product.id);
+      await telegram.sendMessage(chatId, product.name);
+    }
+  }
+  if (properties.length > 8) {
+    await telegram.sendMessage(chatId, "Показаны первые 8 объектов из " + properties.length + ". Полный список — в разделе «Моё имущество».");
+  }
+}
+
 async function sendProfile(chatId: number, user: User) {
   const markup = inline([
     [{ text: "Инвентарь", callback_data: "inventory" }, { text: "Промокод", callback_data: "promo" }],
@@ -192,6 +239,7 @@ async function sendProfile(chatId: number, user: User) {
   ]);
   await telegram.sendMessage(chatId, profileText(user), markup);
   await sendEquippedPhotos(chatId, user);
+  await sendPropertyPhotos(chatId, user);
   await telegram.sendMessage(chatId, "Выберите действие кнопками внизу.", mainKeyboard(isAdmin(user.telegramId)));
 }
 
@@ -223,6 +271,7 @@ async function showOtherProfile(chatId: number, viewer: User, targetId: number) 
   ]);
   await telegram.sendMessage(chatId, text, markup);
   await sendEquippedPhotos(chatId, target);
+  await sendPropertyPhotos(chatId, target);
   await telegram.sendMessage(chatId, "Профиль открыт для просмотра.");
 }
 
@@ -263,6 +312,7 @@ async function showPublicProperty(chatId: number, viewer: User, targetId: number
       [{ text: "Назад в мой профиль", callback_data: "back:profile" }],
     ]),
   );
+  await sendPropertyPhotos(chatId, target);
 }
 
 async function showStore(chatId: number, telegramId: string) {
