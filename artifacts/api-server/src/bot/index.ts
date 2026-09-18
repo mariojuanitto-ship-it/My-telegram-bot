@@ -1,5 +1,4 @@
 import { logger } from "../lib/logger";
-import { renderCharacter } from "./character";
 import {
   catalog,
   catalogById,
@@ -163,25 +162,37 @@ function profileText(user: User) {
   ].join("\n");
 }
 
+async function sendEquippedPhotos(chatId: number, user: User) {
+  const equipped = user.inventory
+    .filter((owned) => owned.equipped)
+    .map((owned) => item(owned.catalogId))
+    .filter((product): product is CatalogItem => Boolean(product));
+
+  if (!equipped.length) {
+    await telegram.sendMessage(chatId, "Фото надетых вещей: пока ничего не надето.");
+    return;
+  }
+
+  await telegram.sendMessage(chatId, "Реальные фото надетых вещей:");
+  for (const product of equipped) {
+    try {
+      await telegram.sendPhoto(chatId, productPhoto(product), product.name);
+    } catch (error: unknown) {
+      logTelegramError(error, "send equipped item photo " + product.id);
+      await telegram.sendMessage(chatId, product.name);
+    }
+  }
+}
+
 async function sendProfile(chatId: number, user: User) {
   const markup = inline([
     [{ text: "Инвентарь", callback_data: "inventory" }, { text: "Промокод", callback_data: "promo" }],
     [{ text: "Моё имущество", callback_data: "property" }],
     [{ text: "👀 Смотреть профиль игрока", callback_data: "profile:other" }],
   ]);
-  try {
-    await telegram.sendPhoto(
-      chatId,
-      renderCharacter(user),
-      profileText(user),
-      markup,
-    );
-    await telegram.sendMessage(chatId, "Выберите действие кнопками внизу.", mainKeyboard(isAdmin(user.telegramId)));
-  } catch (error: unknown) {
-    logger.warn({ err: error }, "Profile image could not be sent; using text fallback");
-    await telegram.sendMessage(chatId, profileText(user), markup);
-    await telegram.sendMessage(chatId, "Выберите действие кнопками внизу.", mainKeyboard(isAdmin(user.telegramId)));
-  }
+  await telegram.sendMessage(chatId, profileText(user), markup);
+  await sendEquippedPhotos(chatId, user);
+  await telegram.sendMessage(chatId, "Выберите действие кнопками внизу.", mainKeyboard(isAdmin(user.telegramId)));
 }
 
 async function showOtherProfile(chatId: number, viewer: User, targetId: number) {
@@ -210,13 +221,9 @@ async function showOtherProfile(chatId: number, viewer: User, targetId: number) 
     [{ text: `Имущество (${target.cars.length + target.houses.length})`, callback_data: `public:property:${target.userId}` }],
     [{ text: "Назад в мой профиль", callback_data: "back:profile" }],
   ]);
-  try {
-    await telegram.sendPhoto(chatId, renderCharacter(target), text, markup);
-  } catch (error: unknown) {
-    logger.warn({ err: error }, "Public profile image could not be sent; using text fallback");
-    await sendLong(chatId, text, viewer.telegramId);
-    await telegram.sendMessage(chatId, "Профиль открыт для просмотра.", markup);
-  }
+  await telegram.sendMessage(chatId, text, markup);
+  await sendEquippedPhotos(chatId, target);
+  await telegram.sendMessage(chatId, "Профиль открыт для просмотра.");
 }
 
 async function showPublicInventory(chatId: number, viewer: User, targetId: number) {
