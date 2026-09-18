@@ -109,7 +109,6 @@ export const mainKeyboard = (isAdmin: boolean): ReplyMarkup => ({
     ["🎰 Казино", "🏆 Форбс"],
     ["👥 Кланы", "🏷 Торговая площадка"],
     ["🔄 Обмен", "💼 Работы"],
-    ["👀 Другие профили"],
     ...(isAdmin ? [["🛠 Админ-панель"]] : []),
   ],
   resize_keyboard: true,

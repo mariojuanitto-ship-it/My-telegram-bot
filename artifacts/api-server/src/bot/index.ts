@@ -93,14 +93,21 @@ const kindLabel = (product: CatalogItem) => categoryLabels[product.kind];
 
 const productPhoto = (product: CatalogItem) => {
   if (product.imageUrl) return product.imageUrl;
-  const query = product.kind === "cars"
-    ? product.name
-    : product.kind === "houses"
-      ? "real house exterior architecture"
-      : product.name.toLowerCase().includes("папирос") || product.name.toLowerCase().includes("marlboro") || product.name.toLowerCase().includes("kent") || product.name.toLowerCase().includes("winston") || product.name.toLowerCase().includes("camel")
-        ? "cigarette pack"
-        : `${product.name} ${kindLabel(product).toLowerCase()}`;
-  return `https://loremflickr.com/640/640/${encodeURIComponent(query)}?lock=${product.id}`;
+  const name = product.name.toLowerCase();
+  const photoByKind: Partial<Record<CatalogKind, string>> = {
+    sneakers: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=900&q=85",
+    shirts: "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=900&q=85",
+    pants: "https://images.unsplash.com/photo-1542272604-787c3835535d?auto=format&fit=crop&w=900&q=85",
+    jackets: "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=900&q=85",
+    hats: "https://images.unsplash.com/photo-1521369909029-2afed882baee?auto=format&fit=crop&w=900&q=85",
+    accessories: name.includes("папирос") || /marlboro|kent|winston|camel|dunhill/.test(name)
+      ? "https://loremflickr.com/900/900/cigarette,product?lock=6767"
+      : "https://images.unsplash.com/photo-1515562141207-7a88fb7ce338?auto=format&fit=crop&w=900&q=85",
+    cars: "https://images.unsplash.com/photo-1503736334956-4c8f8e92946d?auto=format&fit=crop&w=900&q=85",
+    houses: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=900&q=85",
+    donate: "https://images.unsplash.com/photo-1611652022419-a9419f74343d?auto=format&fit=crop&w=900&q=85",
+  };
+  return photoByKind[product.kind] ?? `https://loremflickr.com/900/900/${encodeURIComponent(kindLabel(product))}?lock=${product.id}`;
 };
 
 async function sendText(chatId: number, text: string, telegramId?: string) {
@@ -189,7 +196,7 @@ async function showOtherProfile(chatId: number, viewer: User, targetId: number) 
   const text = [
     `Публичный профиль`,
     `Игрок: ${userName(target)}`,
-    `ID: ${target.userId}`,
+    `Внутренний ID бота: ${target.userId}`,
     `Уровень: ${target.level}`,
     ``,
     `Одежда надета: ${equipped.length ? equipped.map(itemLine).join("\n") : "ничего"}`,
@@ -198,8 +205,57 @@ async function showOtherProfile(chatId: number, viewer: User, targetId: number) 
     ``,
     `Имущество (${target.cars.length + target.houses.length}):\n${properties.length ? properties.join("\n") : "ничего"}`,
   ].join("\n");
-  await sendLong(chatId, text, viewer.telegramId);
-  await telegram.sendMessage(chatId, "Профиль открыт для просмотра.", inline([[{ text: "Назад в мой профиль", callback_data: "back:profile" }]]));
+  const markup = inline([
+    [{ text: `Инвентарь (${target.inventory.length})`, callback_data: `public:inventory:${target.userId}` }],
+    [{ text: `Имущество (${target.cars.length + target.houses.length})`, callback_data: `public:property:${target.userId}` }],
+    [{ text: "Назад в мой профиль", callback_data: "back:profile" }],
+  ]);
+  try {
+    await telegram.sendPhoto(chatId, renderCharacter(target), text, markup);
+  } catch (error: unknown) {
+    logger.warn({ err: error }, "Public profile image could not be sent; using text fallback");
+    await sendLong(chatId, text, viewer.telegramId);
+    await telegram.sendMessage(chatId, "Профиль открыт для просмотра.", markup);
+  }
+}
+
+async function showPublicInventory(chatId: number, viewer: User, targetId: number) {
+  const target = store.findUserById(targetId);
+  if (!target) {
+    await sendText(chatId, "Игрок с таким ID не найден.", viewer.telegramId);
+    return;
+  }
+  const inventory = target.inventory.length
+    ? target.inventory.map((owned) => `• ${itemLine(owned)}`).join("\n")
+    : "пусто";
+  await telegram.sendMessage(
+    chatId,
+    `Инвентарь игрока ID ${target.userId} · ${userName(target)}\n\n${inventory}`,
+    inline([
+      [{ text: "К профилю игрока", callback_data: `public:profile:${target.userId}` }],
+      [{ text: "Назад в мой профиль", callback_data: "back:profile" }],
+    ]),
+  );
+}
+
+async function showPublicProperty(chatId: number, viewer: User, targetId: number) {
+  const target = store.findUserById(targetId);
+  if (!target) {
+    await sendText(chatId, "Игрок с таким ID не найден.", viewer.telegramId);
+    return;
+  }
+  const properties = [
+    ...target.cars.map((owned) => `🚗 ${itemLine(owned)}`),
+    ...target.houses.map((owned) => `🏠 ${itemLine(owned)}`),
+  ];
+  await telegram.sendMessage(
+    chatId,
+    `Имущество игрока ID ${target.userId} · ${userName(target)}\n\n${properties.length ? properties.join("\n") : "ничего"}`,
+    inline([
+      [{ text: "К профилю игрока", callback_data: `public:profile:${target.userId}` }],
+      [{ text: "Назад в мой профиль", callback_data: "back:profile" }],
+    ]),
+  );
 }
 
 async function showStore(chatId: number, telegramId: string) {
@@ -993,11 +1049,6 @@ async function handleMessage(message: TelegramMessage) {
     await showExchange(chatId, user);
     return;
   }
-  if (text === "👀 Другие профили" || text === "Другие профили") {
-    sessions.set(user.telegramId, { type: "profileTarget" });
-    await sendText(chatId, "Введите ID игрока, чей профиль хотите посмотреть.", user.telegramId);
-    return;
-  }
   if (text === "💼 Работы" || text === "Работы") {
     await showJobs(chatId, user);
     return;
@@ -1073,7 +1124,19 @@ async function handleCallback(callback: TelegramCallbackQuery) {
   }
   if (data === "profile:other") {
     sessions.set(user.telegramId, { type: "profileTarget" });
-    await sendText(chatId, "Введите ID игрока, чей профиль хотите посмотреть.", user.telegramId);
+    await sendText(chatId, "Введите внутренний ID игрока из бота, чей профиль хотите посмотреть.", user.telegramId);
+    return;
+  }
+  if (data.startsWith("public:profile:")) {
+    await showOtherProfile(chatId, user, Number(data.split(":")[2]));
+    return;
+  }
+  if (data.startsWith("public:inventory:")) {
+    await showPublicInventory(chatId, user, Number(data.split(":")[2]));
+    return;
+  }
+  if (data.startsWith("public:property:")) {
+    await showPublicProperty(chatId, user, Number(data.split(":")[2]));
     return;
   }
   if (data === "promo") {

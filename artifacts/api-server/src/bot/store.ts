@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { Pool } from "pg";
 import { catalogById, type CatalogKind } from "./catalog";
 
 export type OwnedItem = {
@@ -99,28 +100,92 @@ const initialState = (): BotState => ({
   trades: [],
 });
 
+function normalizeState(input: Partial<BotState> | undefined): BotState {
+  const initial = initialState();
+  return {
+    ...initial,
+    ...input,
+    users: input?.users ?? initial.users,
+    promos: input?.promos ?? initial.promos,
+    supportTickets: input?.supportTickets ?? initial.supportTickets,
+    listings: input?.listings ?? initial.listings,
+    clans: input?.clans ?? initial.clans,
+    trades: (input?.trades ?? initial.trades).map((trade) => ({
+      ...trade,
+      extraPayment: trade.extraPayment ?? "0",
+    })),
+  };
+}
+
 export class GameStore {
   private state: BotState = initialState();
   private saveChain: Promise<void> = Promise.resolve();
   private readonly filePath = path.resolve(
     process.env["RP_BOT_DATA_FILE"] ?? "data/rp-bot.json",
   );
+  private readonly database = process.env["DATABASE_URL"]
+    ? new Pool({
+        connectionString: process.env["DATABASE_URL"],
+        max: 5,
+        ssl: process.env["DATABASE_URL"].includes("neon.tech")
+          ? { rejectUnauthorized: false }
+          : undefined,
+      })
+    : undefined;
 
   async load() {
+    if (this.database) {
+      await this.database.query(`
+        CREATE TABLE IF NOT EXISTS rp_game_state (
+          id integer PRIMARY KEY,
+          state jsonb NOT NULL,
+          updated_at timestamptz NOT NULL DEFAULT now()
+        )
+      `);
+      const result = await this.database.query<{ state: BotState }>(
+        "SELECT state FROM rp_game_state WHERE id = 1",
+      );
+      if (result.rows[0]?.state) {
+        this.state = normalizeState(result.rows[0].state);
+        return;
+      }
+
+      const fileState = await this.readFileState();
+      this.state = fileState ?? initialState();
+      await this.save();
+      return;
+    }
+    const fileState = await this.readFileState();
+    this.state = fileState ?? initialState();
+    if (!fileState) await this.save();
+  }
+
+  private async readFileState() {
     await mkdir(path.dirname(this.filePath), { recursive: true });
     try {
       const raw = await readFile(this.filePath, "utf8");
-      this.state = { ...initialState(), ...(JSON.parse(raw) as Partial<BotState>) };
-      this.state.trades = this.state.trades.map((trade) => ({ ...trade, extraPayment: trade.extraPayment ?? "0" }));
+      return normalizeState(JSON.parse(raw) as Partial<BotState>);
     } catch (error: unknown) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      await this.save();
+      return undefined;
     }
   }
 
   private save() {
     const serialized = JSON.stringify(this.state, null, 2);
-    this.saveChain = this.saveChain.then(() => writeFile(this.filePath, serialized, "utf8"));
+    this.saveChain = this.saveChain.then(async () => {
+      if (this.database) {
+        await this.database.query(
+          `INSERT INTO rp_game_state (id, state, updated_at)
+           VALUES (1, $1::jsonb, now())
+           ON CONFLICT (id) DO UPDATE
+           SET state = EXCLUDED.state, updated_at = now()`,
+          [serialized],
+        );
+      } else {
+        await writeFile(this.filePath, serialized, "utf8");
+      }
+    });
     return this.saveChain;
   }
 
