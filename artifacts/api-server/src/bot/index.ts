@@ -1201,9 +1201,10 @@ async function handleCallback(callback: TelegramCallbackQuery) {
     if (owned) {
       owned.equipped = data.startsWith("equip:");
       await store.updateUser(user);
-      await sendText(chatId, owned.equipped ? "Предмет надет." : "Предмет снят.", user.telegramId);
+      // Refresh the profile once. Do not append the old item card or a
+      // separate product photo: the rendered avatar is the single source of
+      // truth for how an equipped item looks.
       await sendProfile(chatId, user);
-      await showInventoryItem(chatId, user, instanceId);
     }
     return;
   }
