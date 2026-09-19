@@ -539,6 +539,7 @@ export function renderAssetCard(product: CatalogItem) {
   const white = hex("#f8fafc");
   const dark = hex("#111827");
   const accent = hex(product.name.includes("Серебря") ? "#cbd5e1" : palette[product.id % palette.length] ?? "#38bdf8");
+  const productName = product.name.toLowerCase();
   const shortBrand = product.name
     .replace("Mercedes-Benz", "MERCEDES")
     .replace("New Balance", "NB")
@@ -548,7 +549,12 @@ export function renderAssetCard(product: CatalogItem) {
     .replace("Under Armour", "UA")
     .split(" ")[0]
     .replace(/[^a-z0-9]/gi, "")
-    .slice(0, 9) || "RP";
+    .slice(0, 9)
+    || (productName.includes("ваз") ? "VAZ"
+      : productName.includes("москвич") ? "MOSKVICH"
+      : productName.includes("газ") ? "GAZ"
+      : productName.includes("заз") ? "ZAZ"
+      : "RP");
 
   rect(0, 0, WIDTH, HEIGHT, background);
   rect(42, 42, WIDTH - 84, HEIGHT - 84, panel);
@@ -558,7 +564,7 @@ export function renderAssetCard(product: CatalogItem) {
   if (product.kind === "cars") {
     rect(42, 420, WIDTH - 84, 100, hex("#334155"));
     rect(110, 405, 420, 15, hex("#64748b"));
-    if (product.name.toLowerCase().includes("танк")) {
+    if (productName.includes("танк")) {
       rect(170, 325, 300, 100, accent);
       rect(250, 270, 140, 65, accent);
       line(320, 285, 520, 260, 16, accent);
@@ -566,6 +572,26 @@ export function renderAssetCard(product: CatalogItem) {
       circle(420, 430, 34, dark);
       circle(220, 430, 14, hex("#94a3b8"));
       circle(420, 430, 14, hex("#94a3b8"));
+    } else if (/ваз|lada samara|заз|газ|москвич/.test(productName)) {
+      // Boxy silhouettes for the inexpensive older cars. These are kept
+      // distinct from the sports-car silhouette used by premium models.
+      const body = productName.includes("заз") ? hex("#d97706")
+        : productName.includes("газ") ? hex("#1d4ed8")
+        : productName.includes("москвич") ? hex("#64748b")
+        : accent;
+      rect(118, 365, 404, 60, body);
+      rect(168, 315, 248, 52, body);
+      rect(190, 325, 92, 32, hex("#bae6fd"));
+      rect(292, 325, 96, 32, hex("#bae6fd"));
+      rect(102, 415, 436, 12, dark);
+      rect(130, 350, 28, 12, body);
+      rect(416, 350, 28, 12, body);
+      circle(205, 430, 32, dark);
+      circle(435, 430, 32, dark);
+      circle(205, 430, 13, hex("#cbd5e1"));
+      circle(435, 430, 13, hex("#cbd5e1"));
+      rect(126, 380, 28, 12, hex("#fef08a"));
+      rect(462, 380, 28, 12, hex("#ef4444"));
     } else {
       rect(120, 340, 400, 85, accent);
       line(190, 340, 245, 285, 10, accent);
@@ -577,7 +603,7 @@ export function renderAssetCard(product: CatalogItem) {
       circle(435, 430, 32, dark);
       circle(205, 430, 13, hex("#cbd5e1"));
       circle(435, 430, 13, hex("#cbd5e1"));
-      if (product.name.toLowerCase().includes("полицейский") || product.name.toLowerCase().includes("мигалк")) {
+       if (productName.includes("полицейский") || productName.includes("мигалк")) {
         rect(292, 278, 56, 10, hex("#e2e8f0"));
         circle(305, 274, 9, hex("#ef4444"));
         circle(335, 274, 9, hex("#2563eb"));
@@ -590,7 +616,7 @@ export function renderAssetCard(product: CatalogItem) {
     rect(265, 400, 90, 120, hex("#78350f"));
     rect(165, 365, 66, 66, hex("#bae6fd"));
     rect(407, 365, 66, 66, hex("#bae6fd"));
-    if (product.name.toLowerCase().includes("пентхаус") || product.name.toLowerCase().includes("вилла")) {
+    if (productName.includes("пентхаус") || productName.includes("вилла")) {
       rect(510, 265, 24, 165, hex("#94a3b8"));
       circle(522, 245, 25, hex("#34d399"));
     }
