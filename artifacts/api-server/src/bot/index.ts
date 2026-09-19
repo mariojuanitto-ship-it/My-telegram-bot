@@ -539,9 +539,14 @@ async function playCasino(chatId: number, user: User, text: string) {
 }
 
 async function showForbes(chatId: number) {
-  const top = store.users.sort((a, b) => (BigInt(b.coins) > BigInt(a.coins) ? 1 : -1)).slice(0, 10);
+  const top = store.users
+    .map((user) => ({ user, coins: BigInt(user.coins || "0") }))
+    .sort((a, b) => (a.coins === b.coins ? 0 : a.coins > b.coins ? -1 : 1))
+    .slice(0, 10);
   const lines = top.length
-    ? top.map((user, index) => `${index + 1}. ${userName(user)} · ID ${user.userId} · ${money(user.coins)}`)
+    ? top.map(({ user, coins }, index) =>
+        `${index + 1}. ${userName(user)} · ID ${user.userId}\n   Баланс: ${money(coins)}`,
+      )
     : ["Пока никто не зарегистрирован."];
   await telegram.sendMessage(chatId, `FORBES RP CITY · ТОП 10\n\n${lines.join("\n")}`, inline([
     [{ text: "Обновить", callback_data: "forbes" }],
