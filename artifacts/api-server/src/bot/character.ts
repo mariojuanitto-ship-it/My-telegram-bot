@@ -303,6 +303,27 @@ function drawCharacter(user: User) {
   circle(172, 200, 3, hex("#34d399"));
   circle(320, 555, 105, hex("#090f1c"));
 
+  // The default avatar is intentionally a single, stable stickman. Clothing
+  // is drawn only after an item is equipped, so the avatar never looks like it
+  // is wearing random placeholder clothes.
+  if (!equipped.length) {
+    const stick = hex("#f8fafc");
+    circle(320, 178, 44, skin);
+    circle(304, 174, 5, ink);
+    circle(336, 174, 5, ink);
+    line(306, 202, 334, 202, 3, hex("#a05252"));
+    line(320, 224, 320, 382, 10, stick);
+    line(320, 258, 245, 332, 10, stick);
+    line(320, 258, 395, 332, 10, stick);
+    line(320, 382, 260, 492, 10, stick);
+    line(320, 382, 380, 492, 10, stick);
+    circle(242, 335, 9, skin);
+    circle(398, 335, 9, skin);
+    line(250, 496, 274, 496, 8, stick);
+    line(366, 496, 390, 496, 8, stick);
+    return makePng(pixels);
+  }
+
   const shoesStyle = styleFor(shoes, "#38bdf8");
   const pantsStyle = styleFor(pants, "#334155");
   const shirtStyle = styleFor(shirt, "#38bdf8");
@@ -418,8 +439,15 @@ function drawCharacter(user: User) {
   if (hat) {
     const hatStyle = styleFor(hat, "#f59e0b");
     const hatName = hat.name.toLowerCase();
-    rect(260, 112, 120, 20, hatStyle.base);
-    if (hatName.includes("панама")) {
+    if (hatName.includes("фуражка")) {
+      // Peaked service cap for the two general's-cap catalogue items.
+      rect(278, 101, 84, 25, hatStyle.base);
+      rect(266, 122, 108, 12, hatStyle.secondary);
+      rect(290, 106, 60, 7, hatStyle.accent);
+      rect(313, 108, 14, 12, hatStyle.light);
+      circle(320, 114, 4, hatStyle.accent);
+      line(272, 135, 368, 135, 8, hatStyle.dark);
+    } else if (hatName.includes("панама")) {
       rect(274, 103, 92, 28, hatStyle.base);
       rect(260, 124, 120, 9, hatStyle.secondary);
     } else {
