@@ -56,6 +56,25 @@ export type Clan = {
   name: string;
   ownerId: number;
   memberIds: number[];
+  memberRanks?: Record<string, number>;
+  rankNames?: string[];
+};
+
+export type ClanInvite = {
+  id: number;
+  clanId: string;
+  inviterId: number;
+  targetId: number;
+  status: "pending" | "accepted" | "declined" | "cancelled";
+  createdAt: string;
+};
+
+export type ClanMessage = {
+  id: number;
+  clanId: string;
+  userId: number;
+  text: string;
+  createdAt: string;
 };
 
 export type TradeOffer = {
@@ -78,13 +97,30 @@ type BotState = {
   nextTicketId: number;
   nextListingId: number;
   nextTradeId: number;
+  nextClanInviteId: number;
+  nextClanMessageId: number;
   users: Record<string, User>;
   promos: Promo[];
   supportTickets: SupportTicket[];
   listings: Listing[];
   clans: Clan[];
+  clanInvites: ClanInvite[];
+  clanMessages: ClanMessage[];
   trades: TradeOffer[];
 };
+
+const defaultRankNames = () => [
+  "Новичок",
+  "Боец",
+  "Сержант",
+  "Офицер",
+  "Капитан",
+  "Майор",
+  "Полковник",
+  "Генерал",
+  "Заместитель лидера",
+  "Лидер",
+];
 
 const initialState = (): BotState => ({
   nextUserId: 1,
@@ -92,16 +128,29 @@ const initialState = (): BotState => ({
   nextTicketId: 1,
   nextListingId: 1,
   nextTradeId: 1,
+  nextClanInviteId: 1,
+  nextClanMessageId: 1,
   users: {},
   promos: [],
   supportTickets: [],
   listings: [],
   clans: [],
+  clanInvites: [],
+  clanMessages: [],
   trades: [],
 });
 
 function normalizeState(input: Partial<BotState> | undefined): BotState {
   const initial = initialState();
+  const clans = (input?.clans ?? initial.clans).map((clan) => {
+    const legacy = clan as Clan;
+    const memberIds = legacy.memberIds ?? [];
+    const memberRanks = legacy.memberRanks ?? Object.fromEntries(
+      memberIds.map((memberId) => [String(memberId), memberId === legacy.ownerId ? 10 : 1]),
+    );
+    const rankNames = legacy.rankNames?.length === 10 ? legacy.rankNames : defaultRankNames();
+    return { ...legacy, memberIds, memberRanks, rankNames };
+  });
   return {
     ...initial,
     ...input,
@@ -109,7 +158,9 @@ function normalizeState(input: Partial<BotState> | undefined): BotState {
     promos: input?.promos ?? initial.promos,
     supportTickets: input?.supportTickets ?? initial.supportTickets,
     listings: input?.listings ?? initial.listings,
-    clans: input?.clans ?? initial.clans,
+    clans,
+    clanInvites: input?.clanInvites ?? initial.clanInvites,
+    clanMessages: input?.clanMessages ?? initial.clanMessages,
     trades: (input?.trades ?? initial.trades).map((trade) => ({
       ...trade,
       extraPayment: trade.extraPayment ?? "0",
@@ -203,6 +254,14 @@ export class GameStore {
 
   get clans() {
     return this.state.clans;
+  }
+
+  get clanInvites() {
+    return this.state.clanInvites;
+  }
+
+  get clanMessages() {
+    return this.state.clanMessages;
   }
 
   get listings() {
@@ -370,15 +429,69 @@ export class GameStore {
       name,
       ownerId,
       memberIds: [ownerId],
+      memberRanks: { [String(ownerId)]: 10 },
+      rankNames: defaultRankNames(),
     };
     this.state.clans.push(clan);
     await this.save();
     return clan;
   }
 
-  async addClanMember(clan: Clan, userId: number) {
+  async addClanMember(clan: Clan, userId: number, rank = 1) {
     if (!clan.memberIds.includes(userId)) clan.memberIds.push(userId);
+    clan.memberRanks ??= {};
+    clan.memberRanks[String(userId)] = rank;
     await this.save();
+  }
+
+  async removeClanMember(clan: Clan, userId: number) {
+    clan.memberIds = clan.memberIds.filter((memberId) => memberId !== userId);
+    delete clan.memberRanks?.[String(userId)];
+    await this.save();
+  }
+
+  async setClanMemberRank(clan: Clan, userId: number, rank: number) {
+    clan.memberRanks ??= {};
+    clan.memberRanks[String(userId)] = rank;
+    await this.save();
+  }
+
+  async setClanRankName(clan: Clan, rank: number, name: string) {
+    clan.rankNames ??= defaultRankNames();
+    clan.rankNames[rank - 1] = name;
+    await this.save();
+  }
+
+  async addClanInvite(input: Omit<ClanInvite, "id" | "status" | "createdAt">) {
+    const invite: ClanInvite = {
+      ...input,
+      id: this.state.nextClanInviteId++,
+      status: "pending",
+      createdAt: new Date().toISOString(),
+    };
+    this.state.clanInvites.push(invite);
+    await this.save();
+    return invite;
+  }
+
+  async updateClanInvite(invite: ClanInvite) {
+    const index = this.state.clanInvites.findIndex((entry) => entry.id === invite.id);
+    if (index !== -1) this.state.clanInvites[index] = invite;
+    await this.save();
+  }
+
+  async addClanMessage(clanId: string, userId: number, text: string) {
+    const message: ClanMessage = {
+      id: this.state.nextClanMessageId++,
+      clanId,
+      userId,
+      text,
+      createdAt: new Date().toISOString(),
+    };
+    this.state.clanMessages.push(message);
+    if (this.state.clanMessages.length > 500) this.state.clanMessages.splice(0, this.state.clanMessages.length - 500);
+    await this.save();
+    return message;
   }
 
   async addTrade(trade: Omit<TradeOffer, "id">) {
