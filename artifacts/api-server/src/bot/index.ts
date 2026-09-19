@@ -23,6 +23,7 @@ import {
   type TelegramMessage,
   type TelegramUpdate,
 } from "./telegram";
+import { renderCharacter } from "./character";
 
 type Session =
   | { type: "promo" }
@@ -51,7 +52,6 @@ const store = new GameStore();
 const sessions = new Map<string, Session>();
 const ADMIN_ID = () => process.env["TELEGRAM_ADMIN_ID"] ?? "";
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-const BASE_CHARACTER_PHOTO = "https://loremflickr.com/900/1200/mannequin,fullbody?lock=1984";
 
 const money = (value: string | bigint | number) => {
   const raw = BigInt(value);
@@ -191,34 +191,6 @@ function profileText(user: User) {
   ].join("\n");
 }
 
-async function sendEquippedPhotos(chatId: number, user: User) {
-  const equipped = user.inventory
-    .filter((owned) => owned.equipped)
-    .map((owned) => item(owned.catalogId))
-    .filter((product): product is CatalogItem => Boolean(product));
-
-  if (!equipped.length) {
-    await telegram.sendMessage(chatId, "Персонаж без экипировки:");
-    try {
-      await telegram.sendPhoto(chatId, BASE_CHARACTER_PHOTO, "Базовый персонаж без надетых вещей");
-    } catch (error: unknown) {
-      logTelegramError(error, "send base character photo");
-      await telegram.sendMessage(chatId, "Базовый персонаж без надетых вещей.");
-    }
-    return;
-  }
-
-  await telegram.sendMessage(chatId, "Реальные фото надетых вещей:");
-  for (const product of equipped) {
-    try {
-      await telegram.sendPhoto(chatId, productPhoto(product), product.name);
-    } catch (error: unknown) {
-      logTelegramError(error, "send equipped item photo " + product.id);
-      await telegram.sendMessage(chatId, product.name);
-    }
-  }
-}
-
 async function sendPropertyPhotos(chatId: number, user: User) {
   const properties = [...user.cars, ...user.houses]
     .map((owned) => item(owned.catalogId))
@@ -245,9 +217,15 @@ async function sendProfile(chatId: number, user: User) {
     [{ text: "Моё имущество", callback_data: "property" }],
     [{ text: "👀 Смотреть профиль игрока", callback_data: "profile:other" }],
   ]);
+  try {
+    // Always send the deterministic rendered avatar first. Property photos
+    // belong only to the property screens, never to a profile screen.
+    await telegram.sendPhoto(chatId, renderCharacter(user), "Персонаж RP CITY");
+  } catch (error: unknown) {
+    logTelegramError(error, "send rendered profile character");
+    await telegram.sendMessage(chatId, "Персонаж RP CITY");
+  }
   await telegram.sendMessage(chatId, profileText(user), markup);
-  await sendEquippedPhotos(chatId, user);
-  await sendPropertyPhotos(chatId, user);
   await telegram.sendMessage(chatId, "Выберите действие кнопками внизу.", mainKeyboard(isAdmin(user.telegramId)));
 }
 
@@ -277,10 +255,14 @@ async function showOtherProfile(chatId: number, viewer: User, targetId: number) 
     [{ text: `Имущество (${target.cars.length + target.houses.length})`, callback_data: `public:property:${target.userId}` }],
     [{ text: "Назад в мой профиль", callback_data: "back:profile" }],
   ]);
+  try {
+    await telegram.sendPhoto(chatId, renderCharacter(target), "Персонаж игрока");
+  } catch (error: unknown) {
+    logTelegramError(error, "send rendered public profile character");
+    await telegram.sendMessage(chatId, "Персонаж игрока");
+  }
   await telegram.sendMessage(chatId, text, markup);
-  await sendEquippedPhotos(chatId, target);
-  await sendPropertyPhotos(chatId, target);
-  await telegram.sendMessage(chatId, "Профиль открыт для просмотра.");
+  await telegram.sendMessage(chatId, "Профиль открыт для просмотра.", mainKeyboard(isAdmin(viewer.telegramId)));
 }
 
 async function showPublicInventory(chatId: number, viewer: User, targetId: number) {
