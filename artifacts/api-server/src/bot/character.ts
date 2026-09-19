@@ -564,7 +564,47 @@ export function renderAssetCard(product: CatalogItem) {
   if (product.kind === "cars") {
     rect(42, 420, WIDTH - 84, 100, hex("#334155"));
     rect(110, 405, 420, 15, hex("#64748b"));
-    if (productName.includes("танк")) {
+    if (productName.includes("бэт-мобиль")) {
+      const batBlack = hex("#111827");
+      const batEdge = hex("#475569");
+      const batGlass = hex("#334155");
+      rect(108, 374, 424, 54, batBlack);
+      rect(154, 332, 332, 46, batBlack);
+      line(154, 332, 208, 278, 12, batBlack);
+      line(208, 278, 388, 278, 12, batBlack);
+      line(388, 278, 486, 332, 12, batBlack);
+      line(108, 374, 532, 374, 7, batEdge);
+      rect(216, 300, 86, 28, batGlass);
+      rect(310, 300, 92, 28, batGlass);
+      line(208, 278, 228, 238, 9, batBlack);
+      line(228, 238, 250, 278, 9, batBlack);
+      line(390, 278, 420, 238, 9, batBlack);
+      line(420, 238, 438, 286, 9, batBlack);
+      circle(200, 430, 35, dark);
+      circle(440, 430, 35, dark);
+      circle(200, 430, 15, hex("#94a3b8"));
+      circle(440, 430, 15, hex("#94a3b8"));
+      rect(285, 270, 70, 10, hex("#e2e8f0"));
+      circle(300, 265, 10, hex("#ef4444"));
+      circle(340, 265, 10, hex("#2563eb"));
+      line(138, 397, 190, 397, 8, hex("#ef4444"));
+      line(450, 397, 502, 397, 8, hex("#2563eb"));
+    } else if (productName.includes("самолёт")) {
+      const planeBody = hex("#e2e8f0");
+      const planeShadow = hex("#94a3b8");
+      const planeBlue = hex("#38bdf8");
+      line(168, 360, 478, 360, 34, planeBody);
+      line(218, 342, 445, 342, 12, planeBlue);
+      line(294, 348, 242, 270, 16, planeShadow);
+      line(330, 350, 410, 270, 16, planeShadow);
+      line(205, 353, 176, 300, 12, planeShadow);
+      line(430, 353, 478, 300, 12, planeShadow);
+      line(182, 360, 126, 382, 9, planeBlue);
+      line(462, 360, 520, 382, 9, planeBlue);
+      for (const x of [270, 305, 340, 375]) circle(x, 350, 7, hex("#2563eb"));
+      circle(480, 360, 15, hex("#f59e0b"));
+      drawText("7777", 250, 555, 3, white);
+    } else if (productName.includes("танк")) {
       rect(170, 325, 300, 100, accent);
       rect(250, 270, 140, 65, accent);
       line(320, 285, 520, 260, 16, accent);
@@ -609,7 +649,21 @@ export function renderAssetCard(product: CatalogItem) {
         circle(335, 274, 9, hex("#2563eb"));
       }
     }
-  } else {
+  } else if (productName.includes("папирос") || /marlboro|kent|winston|camel|dunhill/.test(productName)) {
+    const gold = hex("#f6c453");
+    const goldShadow = hex("#a16207");
+    const ember = hex("#f97316");
+    rect(116, 274, 408, 18, hex("#0b1020"));
+    line(152, 344, 480, 344, 34, goldShadow);
+    line(152, 336, 480, 336, 25, gold);
+    line(180, 325, 452, 325, 5, hex("#fff7c2"));
+    rect(195, 319, 34, 34, hex("#fff7c2"));
+    line(458, 336, 493, 336, 25, hex("#fef3c7"));
+    line(493, 336, 516, 336, 22, ember);
+    line(508, 302, 520, 278, 5, hex("#cbd5e1"));
+    line(520, 298, 536, 274, 4, hex("#94a3b8"));
+    drawText(product.name.includes("Золотая") ? "GOLD" : "RP", 268, 315, 3, hex("#713f12"));
+  } else if (product.kind === "houses") {
     rect(118, 320, 404, 200, accent);
     line(94, 320, 320, 170, 8, hex("#f8fafc"));
     line(320, 170, 546, 320, 8, hex("#f8fafc"));
@@ -620,6 +674,43 @@ export function renderAssetCard(product: CatalogItem) {
       rect(510, 265, 24, 165, hex("#94a3b8"));
       circle(522, 245, 25, hex("#34d399"));
     }
+  } else if (product.kind === "sneakers") {
+    const shoe = accent;
+    line(180, 350, 360, 350, 72, shoe);
+    line(330, 350, 475, 400, 54, shoe);
+    line(170, 387, 490, 430, 16, hex("#f8fafc"));
+    line(215, 324, 310, 375, 7, hex("#e2e8f0"));
+    line(240, 315, 330, 370, 7, hex("#e2e8f0"));
+    circle(160, 390, 12, hex("#0f172a"));
+    circle(492, 434, 12, hex("#0f172a"));
+  } else if (product.kind === "shirts" || product.kind === "jackets") {
+    rect(232, 248, 176, 270, accent);
+    line(232, 265, 152, 344, 34, accent);
+    line(408, 265, 488, 344, 34, accent);
+    line(320, 248, 320, 518, 5, hex("#e2e8f0"));
+    line(272, 274, 320, 310, 7, hex("#f8fafc"));
+    line(368, 274, 320, 310, 7, hex("#f8fafc"));
+    if (product.kind === "jackets") {
+      rect(250, 370, 52, 58, hex("#0f172a"));
+      rect(338, 370, 52, 58, hex("#0f172a"));
+    }
+  } else if (product.kind === "pants") {
+    rect(238, 250, 164, 84, accent);
+    line(270, 320, 246, 510, 88, accent);
+    line(370, 320, 394, 510, 88, accent);
+    line(320, 330, 320, 500, 7, hex("#0f172a"));
+    line(250, 390, 286, 390, 6, hex("#f8fafc"));
+    line(354, 390, 390, 390, 6, hex("#f8fafc"));
+  } else if (product.kind === "hats") {
+    rect(224, 250, 192, 106, accent);
+    line(166, 356, 474, 356, 24, hex("#e2e8f0"));
+    rect(256, 300, 128, 14, hex("#0f172a"));
+    circle(320, 275, 34, hex("#f8fafc"));
+  } else {
+    circle(320, 350, 112, accent);
+    circle(320, 350, 74, panel);
+    line(245, 350, 395, 350, 8, hex("#f8fafc"));
+    line(320, 275, 320, 425, 8, hex("#f8fafc"));
   }
   drawText(product.name.replace(/[^a-z0-9 ]/gi, "").slice(0, 18) || "RP CITY", 110, 555, 3, white);
   return makePng(pixels);
