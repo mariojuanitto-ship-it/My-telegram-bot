@@ -42,6 +42,7 @@ type Session =
   | { type: "adminItemUser" }
   | { type: "adminItemId"; targetId: number }
   | { type: "adminReply"; ticketId: number }
+  | { type: "adminBroadcast" }
   | { type: "promoCode"; promoType: "money" | "donate" | "item" }
   | { type: "promoMax"; promoType: "money" | "donate" | "item"; code: string }
   | { type: "promoValue"; promoType: "money" | "donate" | "item"; code: string; max: number };
@@ -50,6 +51,7 @@ const store = new GameStore();
 const sessions = new Map<string, Session>();
 const ADMIN_ID = () => process.env["TELEGRAM_ADMIN_ID"] ?? "";
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const BASE_CHARACTER_PHOTO = "https://loremflickr.com/900/1200/mannequin,fullbody?lock=1984";
 
 const money = (value: string | bigint | number) => {
   const raw = BigInt(value);
@@ -196,7 +198,13 @@ async function sendEquippedPhotos(chatId: number, user: User) {
     .filter((product): product is CatalogItem => Boolean(product));
 
   if (!equipped.length) {
-    await telegram.sendMessage(chatId, "Фото надетых вещей: пока ничего не надето.");
+    await telegram.sendMessage(chatId, "Персонаж без экипировки:");
+    try {
+      await telegram.sendPhoto(chatId, BASE_CHARACTER_PHOTO, "Базовый персонаж без надетых вещей");
+    } catch (error: unknown) {
+      logTelegramError(error, "send base character photo");
+      await telegram.sendMessage(chatId, "Базовый персонаж без надетых вещей.");
+    }
     return;
   }
 
@@ -852,6 +860,7 @@ async function showAdmin(chatId: number) {
       [{ text: "Выдать деньги", callback_data: "admin:money" }, { text: "Выдать донат", callback_data: "admin:donate" }],
       [{ text: "Выдать предмет", callback_data: "admin:item" }],
       [{ text: "Ответить на техподдержку", callback_data: "admin:support" }],
+      [{ text: "📢 Рассылка всем", callback_data: "admin:broadcast" }],
       [{ text: "Создать промокод", callback_data: "admin:promo" }],
       [{ text: "ID предметов", callback_data: "admin:ids" }],
       [{ text: "Назад", callback_data: "back:profile" }],
@@ -862,6 +871,23 @@ async function showAdmin(chatId: number) {
 async function adminIds(chatId: number) {
   const lines = catalog.map((product) => `${product.id} · ${product.name}${product.hidden ? " · только выдача" : ""}`);
   await sendLong(chatId, `Каталог ID предметов\n\n${lines.join("\n")}`);
+}
+
+async function broadcastToServer(text: string) {
+  const recipients = store.users.filter((recipient) => /^\d+$/.test(recipient.telegramId));
+  let sent = 0;
+  let failed = 0;
+  for (const recipient of recipients) {
+    try {
+      await telegram.sendMessage(Number(recipient.telegramId), `📢 Сообщение администрации\n\n${text}`);
+      sent += 1;
+    } catch (error: unknown) {
+      failed += 1;
+      logTelegramError(error, `broadcast to ${recipient.telegramId}`);
+    }
+    await sleep(80);
+  }
+  return { sent, failed, total: recipients.length };
 }
 
 async function processText(chatId: number, user: User, text: string) {
@@ -1016,6 +1042,21 @@ async function processText(chatId: number, user: User, text: string) {
     sessions.delete(user.telegramId);
     await sendText(chatId, `Предмет выдан игроку ID ${target.userId}. Экземпляр: ${owned.instanceId}.`, user.telegramId);
     await sendText(Number(target.telegramId), `Администратор выдал вам предмет: ${item(catalogId)?.name}.`, target.telegramId);
+    return;
+  }
+  if (session.type === "adminBroadcast") {
+    if (!isAdmin(user.telegramId)) {
+      sessions.delete(user.telegramId);
+      return;
+    }
+    const message = text.trim();
+    if (!message || message.length > 3800) {
+      await sendText(chatId, "Введите текст длиной от 1 до 3800 символов.", user.telegramId);
+      return;
+    }
+    sessions.delete(user.telegramId);
+    const result = await broadcastToServer(message);
+    await sendText(chatId, `Рассылка завершена. Доставлено: ${result.sent} из ${result.total}. Ошибок доставки: ${result.failed}.`, user.telegramId);
     return;
   }
   if (session.type === "adminReply") {
@@ -1364,6 +1405,9 @@ async function handleCallback(callback: TelegramCallbackQuery) {
       await sendText(chatId, "Введите ID игрока для выдачи предмета.", user.telegramId);
     } else if (data === "admin:ids") {
       await adminIds(chatId);
+    } else if (data === "admin:broadcast") {
+      sessions.set(user.telegramId, { type: "adminBroadcast" });
+      await sendText(chatId, "Введите текст рассылки для всех зарегистрированных игроков.", user.telegramId);
     } else if (data === "admin:promo") {
       await telegram.sendMessage(chatId, "Выберите тип промокода:", inline([
         [{ text: "На деньги", callback_data: "promo:create:money" }, { text: "На донат", callback_data: "promo:create:donate" }],
