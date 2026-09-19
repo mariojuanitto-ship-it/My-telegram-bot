@@ -35,7 +35,7 @@ Railway provides `PORT` automatically. The server listens on it and starts the b
 - Marketplace displays other players listings and your own listings; your listing can be cancelled and the asset is returned.
 - Exchange supports items, cars and houses. After both assets are selected, the initiator enters an extra payment; enter 0 for a free exchange. Both players confirm before coins and assets move.
 - Profile has a bottom keyboard action to enter another player ID and see equipped clothing, inventory and property.
-- Catalog previews use real-photo URLs for clothing, accessories, cigarettes, cars and houses, with a generated fallback for Telegram failures. The police Bat-mobile is a purchasable police vehicle with red/blue emergency lights.
+- Catalog previews are locally drawn item cards, so Telegram no longer depends on old stock-photo URLs. The catalog includes a thicker golden cigarette with a 100,000,000-coin passive bonus, a small children's airplane (ID 7777), and a police Bat-mobile illustration with red/blue emergency lights. The golden cigarette, airplane and Bat-mobile are not available on the player marketplace; the Bat-mobile remains available through admin grants.
 
 ## Local commands
 
