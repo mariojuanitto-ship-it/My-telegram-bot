@@ -102,41 +102,16 @@ function itemLine(owned: OwnedItem) {
 const kindLabel = (product: CatalogItem) => categoryLabels[product.kind];
 
 const productPhoto = (product: CatalogItem) => {
-  // Never use a random stock photo for property. The generated card is
-  // stable and is labelled with the exact model, so a VAZ cannot become a
-  // Lamborghini or a bear.
-  if (product.kind === "cars" || product.kind === "houses") return renderAssetCard(product);
-  if (product.imageUrl) return product.imageUrl;
-  const name = product.name.toLowerCase();
-  const photoByKind: Partial<Record<CatalogKind, string[]>> = {
-    sneakers: [
-      "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=900&q=85",
-      "https://images.unsplash.com/photo-1552346154-21d32810aba3?auto=format&fit=crop&w=900&q=85",
-    ],
-    shirts: [
-      "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=900&q=85",
-      "https://images.unsplash.com/photo-1562157873-818bc0726f68?auto=format&fit=crop&w=900&q=85",
-    ],
-    pants: [
-      "https://images.unsplash.com/photo-1542272604-787c3835535d?auto=format&fit=crop&w=900&q=85",
-      "https://images.unsplash.com/photo-1473966968600-fa801b869a1a?auto=format&fit=crop&w=900&q=85",
-    ],
-    jackets: [
-      "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=900&q=85",
-      "https://images.unsplash.com/photo-1548883354-7622d03aca27?auto=format&fit=crop&w=900&q=85",
-    ],
-    hats: [
-      "https://images.unsplash.com/photo-1521369909029-2afed882baee?auto=format&fit=crop&w=900&q=85",
-      "https://images.unsplash.com/photo-1514327605112-b887c0e61c0a?auto=format&fit=crop&w=900&q=85",
-    ],
-    accessories: name.includes("папирос") || /marlboro|kent|winston|camel|dunhill/.test(name)
-      ? ["https://loremflickr.com/900/900/gold,cigarette,product?lock=6767"]
-      : ["https://images.unsplash.com/photo-1515562141207-7a88fb7ce338?auto=format&fit=crop&w=900&q=85"],
-    donate: ["https://images.unsplash.com/photo-1611652022419-a9419f74343d?auto=format&fit=crop&w=900&q=85"],
-  };
-  const photos = photoByKind[product.kind] ?? [];
-  return photos[product.id % photos.length] ?? ("https://loremflickr.com/900/900/" + encodeURIComponent(kindLabel(product)) + "?lock=" + product.id);
+  return renderAssetCard(product);
 };
+
+const passiveIncomePerSecond = (user: User) =>
+  user.inventory.reduce((total, owned) => {
+    const product = item(owned.catalogId);
+    return owned.equipped && product?.passivePerSecond
+      ? total + BigInt(product.passivePerSecond)
+      : total;
+  }, 0n);
 
 async function sendText(chatId: number, text: string, telegramId?: string) {
   await telegram.sendMessage(chatId, text, telegramId ? mainKeyboard(isAdmin(telegramId)) : undefined);
@@ -174,8 +149,8 @@ async function getCallbackUser(callback: TelegramCallbackQuery) {
 }
 
 function profileText(user: User) {
-  const cigarettes = user.inventory.filter((owned) => owned.equipped && item(owned.catalogId)?.passivePerSecond);
-  const passive = cigarettes.length ? `\nПассивный доход: +${money("100000")}/сек` : "";
+  const passiveIncome = passiveIncomePerSecond(user);
+  const passive = passiveIncome ? `\nПассивный доход: +${money(passiveIncome)}/сек` : "";
   return [
     `RP CITY · Профиль`,
     ``,
@@ -414,7 +389,7 @@ async function showInventoryItem(chatId: number, user: User, instanceId: string)
   if (!product) return;
   await telegram.sendMessage(
     chatId,
-    `${product.name}\nID предмета: ${product.id}\nID экземпляра: ${owned.instanceId}\nСтатус: ${owned.equipped ? "надето" : "снято"}${product.passivePerSecond ? "\nБонус: +100 000 монет в секунду" : ""}`,
+    `${product.name}\nID предмета: ${product.id}\nID экземпляра: ${owned.instanceId}\nСтатус: ${owned.equipped ? "надето" : "снято"}${product.passivePerSecond ? `\nБонус: +${money(product.passivePerSecond)} в секунду` : ""}`,
     inline([
       [{ text: owned.equipped ? "Снять" : "Надеть", callback_data: `${owned.equipped ? "unequip" : "equip"}:${instanceId}` }],
       [{ text: "Назад в инвентарь", callback_data: "inventory" }],
@@ -915,7 +890,9 @@ function listingText(listing: Listing) {
 }
 
 async function showMarket(chatId: number, user: User) {
-  const listings = store.listings.slice(0, 20);
+  const listings = store.listings
+    .filter((listing) => !item(listing.item.catalogId)?.marketplaceDisabled)
+    .slice(0, 20);
   const text = listings.length
     ? `Торговая площадка\n\n${listings.map((listing) => `${listing.sellerId === user.userId ? "ВАШЕ ОБЪЯВЛЕНИЕ" : "ОБЪЯВЛЕНИЕ"} #${listing.id}\n${listingText(listing)}`).join("\n\n")}`
     : "Торговая площадка пока пуста.";
@@ -940,7 +917,8 @@ async function showMarket(chatId: number, user: User) {
 
 async function showMarketAssets(chatId: number, user: User, assetType: "item" | "car" | "house") {
   const assets = assetType === "item" ? user.inventory : assetType === "car" ? user.cars : user.houses;
-  if (!assets.length) {
+  const marketableAssets = assets.filter((owned) => !item(owned.catalogId)?.marketplaceDisabled);
+  if (!marketableAssets.length) {
     await sendText(chatId, "У вас нет подходящего имущества для продажи.", user.telegramId);
     return;
   }
@@ -948,7 +926,7 @@ async function showMarketAssets(chatId: number, user: User, assetType: "item" | 
     chatId,
     "Выберите имущество для выставления:",
     inline([
-      ...assets.map((owned) => [{ text: item(owned.catalogId)?.name ?? "Неизвестно", callback_data: `market:select:${assetType}:${owned.instanceId}` }]),
+      ...marketableAssets.map((owned) => [{ text: item(owned.catalogId)?.name ?? "Неизвестно", callback_data: `market:select:${assetType}:${owned.instanceId}` }]),
       [{ text: "Назад", callback_data: "market" }],
     ]),
   );
@@ -966,6 +944,10 @@ async function listAsset(chatId: number, user: User, assetType: "item" | "car" |
     await sendText(chatId, "Имущество уже отсутствует у вас.", user.telegramId);
     return;
   }
+  if (item(owned.catalogId)?.marketplaceDisabled) {
+    await sendText(chatId, "Этот предмет нельзя выставлять на торговую площадку.", user.telegramId);
+    return;
+  }
   await store.removeOwned(user, owned);
   const listing = await store.addListing({ sellerId: user.userId, assetType, item: owned, price: price.toString() });
   await sendText(chatId, `Выставлено на площадку под номером #${listing.id}.\nЦена: ${money(listing.price)}`, user.telegramId);
@@ -973,7 +955,7 @@ async function listAsset(chatId: number, user: User, assetType: "item" | "car" |
 
 async function buyListing(chatId: number, user: User, listingId: number) {
   const listing = store.listings.find((entry) => entry.id === listingId);
-  if (!listing || listing.sellerId === user.userId) {
+  if (!listing || listing.sellerId === user.userId || item(listing.item.catalogId)?.marketplaceDisabled) {
     await sendText(chatId, "Объявление не найдено.", user.telegramId);
     return;
   }
@@ -1798,12 +1780,9 @@ async function processUpdate(update: TelegramUpdate) {
 }
 
 async function passiveIncome() {
-  const eligible = store.users.filter((user) =>
-    user.inventory.some((owned) => owned.equipped && Boolean(item(owned.catalogId)?.passivePerSecond)),
-  );
+  const eligible = store.users.filter((user) => passiveIncomePerSecond(user) > 0n);
   for (const user of eligible) {
-    const count = user.inventory.filter((owned) => owned.equipped && Boolean(item(owned.catalogId)?.passivePerSecond)).length;
-    user.coins = (BigInt(user.coins) + BigInt(count) * 100_000n).toString();
+    user.coins = (BigInt(user.coins) + passiveIncomePerSecond(user)).toString();
     await store.updateUser(user);
   }
 }
