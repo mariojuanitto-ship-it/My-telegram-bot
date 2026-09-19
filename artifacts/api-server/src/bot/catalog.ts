@@ -16,6 +16,7 @@ export type CatalogItem = {
   price: string;
   donatePrice?: string;
   hidden?: boolean;
+  marketplaceDisabled?: boolean;
   passivePerSecond?: string;
   imageUrl?: string;
 };
@@ -215,7 +216,13 @@ export const catalog: CatalogItem[] = [
   ...generated("hats", 5001, hatNames, 1_000_000n, 1_000_000_000n),
   ...generated("accessories", 6001, accessoryNames, 100_000n, 1_000_000_000n).map((item, index) =>
     index === 29
-      ? { ...item, id: 6767, name: "Золотая папироса", passivePerSecond: "100000" }
+       ? {
+           ...item,
+           id: 6767,
+           name: "Золотая папироса",
+           passivePerSecond: "100000000",
+           marketplaceDisabled: true,
+         }
       : item,
   ),
   ...generated("accessories", 6801, cigaretteNames, 50_000n, 5_000_000n),
@@ -226,6 +233,15 @@ export const catalog: CatalogItem[] = [
     kind: "cars",
     name: "Полицейский Бэт-мобиль с мигалками",
     price: "25000000000",
+    hidden: true,
+    marketplaceDisabled: true,
+  },
+  {
+    id: 7777,
+    kind: "cars",
+    name: "Детский самолёт",
+    price: "777000000",
+    marketplaceDisabled: true,
   },
   {
     id: 9001,
