@@ -9,6 +9,7 @@ import {
 } from "./catalog";
 import {
   GameStore,
+  type Clan,
   type Listing,
   type OwnedItem,
   type TradeOffer,
@@ -19,11 +20,12 @@ import {
   logTelegramError,
   mainKeyboard,
   telegram,
+  type InlineKeyboardButton,
   type TelegramCallbackQuery,
   type TelegramMessage,
   type TelegramUpdate,
 } from "./telegram";
-import { renderCharacter } from "./character";
+import { renderAssetCard, renderCharacter } from "./character";
 
 type Session =
   | { type: "promo" }
@@ -31,6 +33,13 @@ type Session =
   | { type: "casino" }
   | { type: "clanName" }
   | { type: "clanJoin" }
+  | { type: "clanInviteUser" }
+  | { type: "clanRankUser" }
+  | { type: "clanRankValue"; targetId: number }
+  | { type: "clanRankNumber" }
+  | { type: "clanRankName"; rank: number }
+  | { type: "clanKickUser" }
+  | { type: "clanChat" }
   | { type: "marketTarget"; assetType: "item" | "car" | "house" }
   | { type: "marketPrice"; assetType: "item" | "car" | "house"; instanceId: string }
   | { type: "tradeTarget"; kind: "any" | "items" | "property" }
@@ -93,6 +102,10 @@ function itemLine(owned: OwnedItem) {
 const kindLabel = (product: CatalogItem) => categoryLabels[product.kind];
 
 const productPhoto = (product: CatalogItem) => {
+  // Never use a random stock photo for property. The generated card is
+  // stable and is labelled with the exact model, so a VAZ cannot become a
+  // Lamborghini or a bear.
+  if (product.kind === "cars" || product.kind === "houses") return renderAssetCard(product);
   if (product.imageUrl) return product.imageUrl;
   const name = product.name.toLowerCase();
   const photoByKind: Partial<Record<CatalogKind, string[]>> = {
@@ -119,19 +132,6 @@ const productPhoto = (product: CatalogItem) => {
     accessories: name.includes("папирос") || /marlboro|kent|winston|camel|dunhill/.test(name)
       ? ["https://loremflickr.com/900/900/gold,cigarette,product?lock=6767"]
       : ["https://images.unsplash.com/photo-1515562141207-7a88fb7ce338?auto=format&fit=crop&w=900&q=85"],
-    cars: [
-      "https://images.unsplash.com/photo-1503736334956-4c8f8e92946d?auto=format&fit=crop&w=900&q=85",
-      "https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?auto=format&fit=crop&w=900&q=85",
-      "https://images.unsplash.com/photo-1542362567-b07e54358753?auto=format&fit=crop&w=900&q=85",
-      "https://images.unsplash.com/photo-1553440569-bcc63803a83d?auto=format&fit=crop&w=900&q=85",
-    ],
-    houses: [
-      "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=900&q=85",
-      "https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?auto=format&fit=crop&w=900&q=85",
-      "https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?auto=format&fit=crop&w=900&q=85",
-      "https://images.unsplash.com/photo-1600047509807-ba8f99d2cdde?auto=format&fit=crop&w=900&q=85",
-      "https://images.unsplash.com/photo-1600585154526-990dced4db0d?auto=format&fit=crop&w=900&q=85",
-    ],
     donate: ["https://images.unsplash.com/photo-1611652022419-a9419f74343d?auto=format&fit=crop&w=900&q=85"],
   };
   const photos = photoByKind[product.kind] ?? [];
@@ -197,7 +197,7 @@ async function sendPropertyPhotos(chatId: number, user: User) {
     .filter((product): product is CatalogItem => Boolean(product));
 
   if (!properties.length) return;
-  await telegram.sendMessage(chatId, "Реальные фото автомобилей и домов:");
+  await telegram.sendMessage(chatId, "Мои автомобили и дома:");
   for (const product of properties.slice(0, 8)) {
     try {
       await telegram.sendPhoto(chatId, productPhoto(product), product.name);
@@ -311,11 +311,7 @@ async function showStore(chatId: number, telegramId: string) {
     chatId,
     "Категории товаров",
     inline([
-      [{ text: "Кроссовки", callback_data: "shop:sneakers" }, { text: "Майки", callback_data: "shop:shirts" }],
-      [{ text: "Штаны", callback_data: "shop:pants" }, { text: "Куртки", callback_data: "shop:jackets" }],
-      [{ text: "Головные уборы", callback_data: "shop:hats" }],
       [{ text: "Одежда", callback_data: "shop:clothing" }],
-      [{ text: "Аксессуары", callback_data: "shop:accessories" }],
       [{ text: "Автомобили", callback_data: "shop:cars" }, { text: "Дома", callback_data: "shop:houses" }],
       [{ text: "Назад", callback_data: "back:profile" }],
     ]),
@@ -570,19 +566,136 @@ async function doJob(chatId: number, user: User, job: string) {
   await sendText(chatId, `Работа «${job}» выполнена.\nНачислено: ${money("10000")} и 20 exp.${levelUp ? `\nПоздравляем! Новый уровень: ${user.level}.` : ""}\nБаланс: ${money(user.coins)}`, user.telegramId);
 }
 
-async function showClans(chatId: number, user: User) {
-  const own = user.clanId ? store.clans.find((clan) => clan.id === user.clanId) : undefined;
-  const list = store.clans.length
-    ? store.clans.slice(0, 12).map((clan) => `${clan.id} · ${clan.name} · ${clan.memberIds.length} участников`).join("\n")
-    : "Кланов пока нет.";
+function clanForUser(user: User) {
+  return user.clanId ? store.clans.find((clan) => clan.id === user.clanId) : undefined;
+}
+
+function clanRank(clan: Clan, userId: number) {
+  const saved = clan.memberRanks?.[String(userId)];
+  if (saved) return Math.max(1, Math.min(10, saved));
+  return clan.ownerId === userId ? 10 : 1;
+}
+
+function clanRankName(clan: Clan, rank: number) {
+  return clan.rankNames?.[rank - 1] ?? `Ранг ${rank}`;
+}
+
+function clanCanInvite(clan: Clan, userId: number) {
+  return clanRank(clan, userId) >= 7;
+}
+
+function clanCanManage(clan: Clan, userId: number) {
+  return clanRank(clan, userId) >= 9;
+}
+
+async function showClanMembers(chatId: number, user: User) {
+  sessions.delete(user.telegramId);
+  const clan = clanForUser(user);
+  if (!clan) {
+    await sendText(chatId, "Сначала вступите в клан.", user.telegramId);
+    return;
+  }
+  const lines = clan.memberIds.map((memberId) => {
+    const member = store.findUserById(memberId);
+    const rank = clanRank(clan, memberId);
+    return `${memberId} · ${member ? userName(member) : "Игрок"} · TG: ${member?.telegramId ?? "не найден"}\n   Ранг ${rank}: ${clanRankName(clan, rank)}`;
+  });
   await telegram.sendMessage(
     chatId,
-    `Кланы\n\n${own ? `Ваш клан: ${own.name} (${own.id})\n` : ""}${list}\n\nСоздание клана стоит ${money("1000000000")}.`,
+    `Состав клана «${clan.name}»\n\n${lines.join("\n\n") || "В клане пока нет участников."}`,
     inline([
-      [{ text: "Создать клан", callback_data: "clan:create" }, { text: "Вступить в клан", callback_data: "clan:join" }],
-      [{ text: "Обновить", callback_data: "clans" }],
-      [{ text: "Назад", callback_data: "back:profile" }],
+      [{ text: "Назад в клан", callback_data: "clans" }],
     ]),
+  );
+}
+
+async function showClanInvites(chatId: number, user: User) {
+  sessions.delete(user.telegramId);
+  const invites = store.clanInvites.filter((invite) => invite.targetId === user.userId && invite.status === "pending");
+  if (!invites.length) {
+    await sendText(chatId, "Новых приглашений в клан нет.", user.telegramId);
+    return;
+  }
+  const rows = invites.map((invite) => {
+    const clan = store.clans.find((entry) => entry.id === invite.clanId);
+    return [
+      { text: `Принять «${clan?.name ?? invite.clanId}»`, callback_data: `clan:invite:accept:${invite.id}` },
+      { text: "Отказаться", callback_data: `clan:invite:decline:${invite.id}` },
+    ];
+  });
+  await telegram.sendMessage(chatId, "Вам отправили приглашение в клан:", inline([
+    ...rows,
+    [{ text: "Назад", callback_data: "clans" }],
+  ]));
+}
+
+async function showClanChat(chatId: number, user: User) {
+  const clan = clanForUser(user);
+  if (!clan) {
+    sessions.delete(user.telegramId);
+    await sendText(chatId, "Вы не состоите в клане.", user.telegramId);
+    return;
+  }
+  const messages = store.clanMessages
+    .filter((message) => message.clanId === clan.id)
+    .slice(-30);
+  const text = messages.length
+    ? messages.map((message) => {
+        const author = store.findUserById(message.userId);
+        return `${author ? userName(author) : `ID ${message.userId}`} · ${new Date(message.createdAt).toLocaleString("ru-RU")}\n${message.text}`;
+      }).join("\n\n")
+    : "В чате пока тихо. Напишите первое сообщение.";
+  await telegram.sendMessage(
+    chatId,
+    `Чат клана «${clan.name}»\n\n${text}`,
+    inline([
+      [{ text: "Выйти из чата клана", callback_data: "clan:chat:leave" }],
+      [{ text: "Обновить чат", callback_data: "clan:chat:refresh" }],
+      [{ text: "Назад в клан", callback_data: "clans" }],
+    ]),
+  );
+}
+
+async function showClans(chatId: number, user: User) {
+  const own = clanForUser(user);
+  const pendingInvites = store.clanInvites.filter((invite) => invite.targetId === user.userId && invite.status === "pending");
+  if (!own) {
+    const list = store.clans.length
+      ? store.clans.slice(0, 12).map((clan) => `${clan.id} · ${clan.name} · ${clan.memberIds.length} участников`).join("\n")
+      : "Кланов пока нет.";
+    await telegram.sendMessage(
+      chatId,
+      `Кланы\n\n${list}\n\nСоздание клана стоит ${money("1000000000")}.${pendingInvites.length ? `\nНовых приглашений: ${pendingInvites.length}` : ""}`,
+      inline([
+        [{ text: "Создать клан", callback_data: "clan:create" }],
+        ...(pendingInvites.length ? [[{ text: `Принять в клан (${pendingInvites.length})`, callback_data: "clan:invites" }]] : []),
+        [{ text: "Обновить", callback_data: "clans" }],
+        [{ text: "Назад", callback_data: "back:profile" }],
+      ]),
+    );
+    return;
+  }
+
+  const rank = clanRank(own, user.userId);
+  const inChat = sessions.get(user.telegramId)?.type === "clanChat";
+  const rows: InlineKeyboardButton[][] = [
+    [{ text: inChat ? "Выйти из чата клана" : "Чат клана", callback_data: inChat ? "clan:chat:leave" : "clan:chat" }],
+    [{ text: "Состав клана", callback_data: "clan:members" }],
+    ...(pendingInvites.length ? [[{ text: `Принять в клан (${pendingInvites.length})`, callback_data: "clan:invites" }]] : []),
+    ...(clanCanInvite(own, user.userId) ? [[{ text: "Принять игрока в клан", callback_data: "clan:invite" }]] : []),
+    ...(clanCanManage(own, user.userId) ? [
+      [{ text: "Повысить/изменить ранг", callback_data: "clan:promote" }],
+      [{ text: "Назвать ранг 1–10", callback_data: "clan:rename" }],
+      [{ text: "Выгнать из клана", callback_data: "clan:kick" }],
+    ] : []),
+    [{ text: "Выйти из клана", callback_data: "clan:leave" }],
+    [{ text: "Обновить", callback_data: "clans" }],
+    [{ text: "Назад", callback_data: "back:profile" }],
+  ];
+  await telegram.sendMessage(
+    chatId,
+    `Клан «${own.name}» · ${own.id}\nВаш ранг: ${rank} · ${clanRankName(own, rank)}\nУчастников: ${own.memberIds.length}\n\nПрава: ${rank >= 9 ? "управление составом и рангами" : rank >= 7 ? "приглашение игроков" : "участник"}`,
+    inline(rows),
   );
 }
 
@@ -621,6 +734,179 @@ async function joinClan(chatId: number, user: User, clanId: string) {
   user.clanId = clan.id;
   await store.updateUser(user);
   await sendText(chatId, `Вы вступили в клан «${clan.name}».`, user.telegramId);
+}
+
+async function inviteToClan(chatId: number, user: User, targetIdText: string) {
+  const clan = clanForUser(user);
+  const targetId = Number(targetIdText.trim());
+  const target = store.findUserById(targetId);
+  if (!clan || !clanCanInvite(clan, user.userId)) {
+    await sendText(chatId, "Приглашать в клан могут только участники 7–10 ранга.", user.telegramId);
+    return;
+  }
+  if (!target || target.userId === user.userId) {
+    await sendText(chatId, "Игрок с таким ID не найден.", user.telegramId);
+    return;
+  }
+  if (target.clanId) {
+    await sendText(chatId, "Этот игрок уже состоит в клане.", user.telegramId);
+    return;
+  }
+  if (store.clanInvites.some((invite) => invite.clanId === clan.id && invite.targetId === target.userId && invite.status === "pending")) {
+    await sendText(chatId, "Этому игроку уже отправлено приглашение.", user.telegramId);
+    return;
+  }
+  const invite = await store.addClanInvite({ clanId: clan.id, inviterId: user.userId, targetId: target.userId });
+  await sendText(chatId, `Приглашение #${invite.id} отправлено игроку ID ${target.userId}.`, user.telegramId);
+  await telegram.sendMessage(
+    Number(target.telegramId),
+    `Вам отправили приглашение в клан «${clan.name}».\nОтправитель: ${userName(user)} · ID ${user.userId}`,
+    inline([[
+      { text: "Принять", callback_data: `clan:invite:accept:${invite.id}` },
+      { text: "Отказаться", callback_data: `clan:invite:decline:${invite.id}` },
+    ]]),
+  );
+}
+
+async function resolveClanInvite(chatId: number, user: User, inviteId: number, accept: boolean) {
+  const invite = store.clanInvites.find((entry) => entry.id === inviteId && entry.targetId === user.userId && entry.status === "pending");
+  if (!invite) {
+    await sendText(chatId, "Приглашение уже недействительно.", user.telegramId);
+    return;
+  }
+  const clan = store.clans.find((entry) => entry.id === invite.clanId);
+  if (!clan) {
+    invite.status = "cancelled";
+    await store.updateClanInvite(invite);
+    await sendText(chatId, "Клан больше не существует.", user.telegramId);
+    return;
+  }
+  if (!accept) {
+    invite.status = "declined";
+    await store.updateClanInvite(invite);
+    await sendText(chatId, "Вы отказались от приглашения.", user.telegramId);
+    return;
+  }
+  if (user.clanId) {
+    await sendText(chatId, "Сначала выйдите из текущего клана.", user.telegramId);
+    return;
+  }
+  invite.status = "accepted";
+  await store.updateClanInvite(invite);
+  await store.addClanMember(clan, user.userId, 1);
+  user.clanId = clan.id;
+  await store.updateUser(user);
+  await sendText(chatId, `Вы вступили в клан «${clan.name}».`, user.telegramId);
+  const inviter = store.findUserById(invite.inviterId);
+  if (inviter) await sendText(Number(inviter.telegramId), `${userName(user)} принял приглашение в клан.`, inviter.telegramId);
+}
+
+async function promoteClanMember(chatId: number, user: User, targetIdText: string) {
+  const clan = clanForUser(user);
+  const targetId = Number(targetIdText.trim());
+  const target = store.findUserById(targetId);
+  if (!clan || !clanCanManage(clan, user.userId)) {
+    await sendText(chatId, "Повышать ранг могут только участники 9–10 ранга.", user.telegramId);
+    return;
+  }
+  if (!target || !clan.memberIds.includes(target.userId) || target.userId === clan.ownerId) {
+    await sendText(chatId, "Участник клана с таким ID не найден или это лидер.", user.telegramId);
+    return;
+  }
+  sessions.set(user.telegramId, { type: "clanRankValue", targetId });
+  await sendText(chatId, `Введите новый ранг для игрока ID ${targetId} — целое число от 1 до 10.`, user.telegramId);
+}
+
+async function setClanMemberRank(chatId: number, user: User, targetId: number, rankText: string) {
+  const clan = clanForUser(user);
+  const rank = Number(rankText.trim());
+  const target = store.findUserById(targetId);
+  if (!clan || !target || !clanCanManage(clan, user.userId) || !clan.memberIds.includes(targetId) || !Number.isInteger(rank) || rank < 1 || rank > 10) {
+    await sendText(chatId, "Введите ранг от 1 до 10 для участника этого клана.", user.telegramId);
+    return;
+  }
+  if (targetId === clan.ownerId || rank >= clanRank(clan, user.userId)) {
+    await sendText(chatId, "Нельзя назначить участнику ранг не ниже своего или изменить ранг лидера.", user.telegramId);
+    return;
+  }
+  await store.setClanMemberRank(clan, targetId, rank);
+  sessions.delete(user.telegramId);
+  await sendText(chatId, `Игроку ID ${targetId} назначен ранг ${rank}: ${clanRankName(clan, rank)}.`, user.telegramId);
+  await sendText(Number(target.telegramId), `В клане «${clan.name}» вам назначили ранг ${rank}: ${clanRankName(clan, rank)}.`, target.telegramId);
+}
+
+async function saveClanRankName(chatId: number, user: User, rank: number, name: string) {
+  const clan = clanForUser(user);
+  const clean = name.trim().slice(0, 32);
+  if (!clan || !clanCanManage(clan, user.userId) || clean.length < 2) {
+    await sendText(chatId, "Название ранга должно быть от 2 до 32 символов.", user.telegramId);
+    return;
+  }
+  await store.setClanRankName(clan, rank, clean);
+  sessions.delete(user.telegramId);
+  await sendText(chatId, `Название ранга ${rank} изменено на «${clean}».`, user.telegramId);
+}
+
+async function kickFromClan(chatId: number, user: User, targetIdText: string) {
+  const clan = clanForUser(user);
+  const targetId = Number(targetIdText.trim());
+  const target = store.findUserById(targetId);
+  if (!clan || !clanCanManage(clan, user.userId) || !target || !clan.memberIds.includes(targetId) || targetId === clan.ownerId) {
+    await sendText(chatId, "Можно выгнать только обычного участника своего клана.", user.telegramId);
+    return;
+  }
+  if (clanRank(clan, targetId) >= clanRank(clan, user.userId)) {
+    await sendText(chatId, "Нельзя выгнать участника с равным или более высоким рангом.", user.telegramId);
+    return;
+  }
+  await store.removeClanMember(clan, targetId);
+  delete target.clanId;
+  await store.updateUser(target);
+  sessions.delete(user.telegramId);
+  await sendText(chatId, `Игрок ID ${targetId} выгнан из клана.`, user.telegramId);
+  await sendText(Number(target.telegramId), `Вас выгнали из клана «${clan.name}».`, target.telegramId);
+}
+
+async function leaveClan(chatId: number, user: User) {
+  const clan = clanForUser(user);
+  if (!clan) {
+    await sendText(chatId, "Вы не состоите в клане.", user.telegramId);
+    return;
+  }
+  if (clan.ownerId === user.userId) {
+    await sendText(chatId, "Лидер не может выйти из клана. Сначала передайте лидерство.", user.telegramId);
+    return;
+  }
+  await store.removeClanMember(clan, user.userId);
+  delete user.clanId;
+  sessions.delete(user.telegramId);
+  await store.updateUser(user);
+  await sendText(chatId, `Вы вышли из клана «${clan.name}».`, user.telegramId);
+}
+
+async function writeClanMessage(chatId: number, user: User, text: string) {
+  const clan = clanForUser(user);
+  const clean = text.trim().slice(0, 500);
+  if (!clan || !clean) {
+    await sendText(chatId, "Сообщение не может быть пустым.", user.telegramId);
+    return;
+  }
+  await store.addClanMessage(clan.id, user.userId, clean);
+  for (const memberId of clan.memberIds) {
+    if (memberId === user.userId) continue;
+    const member = store.findUserById(memberId);
+    if (!member) continue;
+    try {
+      await telegram.sendMessage(
+        Number(member.telegramId),
+        `💬 ${clan.name} · ${userName(user)}:\n${clean}`,
+        inline([[{ text: "Открыть чат клана", callback_data: "clan:chat" }]]),
+      );
+    } catch (error: unknown) {
+      logTelegramError(error, `clan message to ${member.telegramId}`);
+    }
+  }
+  await showClanChat(chatId, user);
 }
 
 function listingText(listing: Listing) {
@@ -909,6 +1195,43 @@ async function processText(chatId: number, user: User, text: string) {
   if (session.type === "clanJoin") {
     sessions.delete(user.telegramId);
     await joinClan(chatId, user, text);
+    return;
+  }
+  if (session.type === "clanInviteUser") {
+    sessions.delete(user.telegramId);
+    await inviteToClan(chatId, user, text);
+    return;
+  }
+  if (session.type === "clanRankUser") {
+    sessions.delete(user.telegramId);
+    await promoteClanMember(chatId, user, text);
+    return;
+  }
+  if (session.type === "clanRankValue") {
+    await setClanMemberRank(chatId, user, session.targetId, text);
+    return;
+  }
+  if (session.type === "clanRankNumber") {
+    const rank = Number(text.trim());
+    if (!Number.isInteger(rank) || rank < 1 || rank > 10) {
+      await sendText(chatId, "Введите номер ранга от 1 до 10.", user.telegramId);
+      return;
+    }
+    sessions.set(user.telegramId, { type: "clanRankName", rank });
+    await sendText(chatId, `Введите новое название для ранга ${rank}.`, user.telegramId);
+    return;
+  }
+  if (session.type === "clanRankName") {
+    await saveClanRankName(chatId, user, session.rank, text);
+    return;
+  }
+  if (session.type === "clanKickUser") {
+    sessions.delete(user.telegramId);
+    await kickFromClan(chatId, user, text);
+    return;
+  }
+  if (session.type === "clanChat") {
+    await writeClanMessage(chatId, user, text);
     return;
   }
   if (session.type === "marketTarget") {
@@ -1270,6 +1593,61 @@ async function handleCallback(callback: TelegramCallbackQuery) {
   }
   if (data === "clans") {
     await showClans(chatId, user);
+    return;
+  }
+  if (data.startsWith("clan:invite:accept:")) {
+    await resolveClanInvite(chatId, user, Number(data.split(":")[3]), true);
+    return;
+  }
+  if (data.startsWith("clan:invite:decline:")) {
+    await resolveClanInvite(chatId, user, Number(data.split(":")[3]), false);
+    return;
+  }
+  if (data === "clan:chat") {
+    sessions.set(user.telegramId, { type: "clanChat" });
+    await showClanChat(chatId, user);
+    return;
+  }
+  if (data === "clan:chat:refresh") {
+    sessions.set(user.telegramId, { type: "clanChat" });
+    await showClanChat(chatId, user);
+    return;
+  }
+  if (data === "clan:chat:leave") {
+    sessions.delete(user.telegramId);
+    await showClans(chatId, user);
+    return;
+  }
+  if (data === "clan:members") {
+    await showClanMembers(chatId, user);
+    return;
+  }
+  if (data === "clan:invites") {
+    await showClanInvites(chatId, user);
+    return;
+  }
+  if (data === "clan:invite") {
+    sessions.set(user.telegramId, { type: "clanInviteUser" });
+    await sendText(chatId, "Введите ID игрока, которому отправить приглашение в клан.", user.telegramId);
+    return;
+  }
+  if (data === "clan:promote") {
+    sessions.set(user.telegramId, { type: "clanRankUser" });
+    await sendText(chatId, "Введите ID участника клана, которому изменить ранг.", user.telegramId);
+    return;
+  }
+  if (data === "clan:rename") {
+    sessions.set(user.telegramId, { type: "clanRankNumber" });
+    await sendText(chatId, "Введите номер ранга от 1 до 10.", user.telegramId);
+    return;
+  }
+  if (data === "clan:kick") {
+    sessions.set(user.telegramId, { type: "clanKickUser" });
+    await sendText(chatId, "Введите ID игрока, которого нужно выгнать из клана.", user.telegramId);
+    return;
+  }
+  if (data === "clan:leave") {
+    await leaveClan(chatId, user);
     return;
   }
   if (data === "clan:create") {
