@@ -1553,7 +1553,9 @@ async function handleCallback(callback: TelegramCallbackQuery) {
     const product = owned ? item(owned.catalogId) : undefined;
     if (owned && product && (product.kind === "cars" || product.kind === "houses")) {
       await store.removeOwned(user, owned);
-      const payout = (BigInt(product.price) * 70n) / 100n;
+      const payout = product.governmentSalePrice !== undefined
+         ? BigInt(product.governmentSalePrice)
+         : (BigInt(product.price) * 70n) / 100n;
       user.coins = (BigInt(user.coins) + payout).toString();
       await store.updateUser(user);
       await sendText(chatId, `Имущество продано государству за ${money(payout)}.`, user.telegramId);
