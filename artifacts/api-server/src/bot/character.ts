@@ -121,6 +121,23 @@ function drawCharacter(user: User) {
       rect(x - Math.floor(width / 2), y - Math.floor(width / 2), width, width, color);
     }
   };
+  const shade = (color: Color, factor: number): Color => [
+    Math.max(0, Math.min(255, Math.round(color[0] * factor))),
+    Math.max(0, Math.min(255, Math.round(color[1] * factor))),
+    Math.max(0, Math.min(255, Math.round(color[2] * factor))),
+    color[3],
+  ];
+  const fabricRect = (x: number, y: number, width: number, height: number, color: Color, seed: number) => {
+    // Deterministic weave and light variation make fabric read as a raster
+    // material instead of a flat game-colour block.
+    for (let yy = y; yy < y + height; yy += 1) {
+      for (let xx = x; xx < x + width; xx += 1) {
+        const weave = Math.sin((xx + seed) * 0.19) * 0.025 + Math.sin((yy - seed) * 0.31) * 0.018;
+        const light = 0.91 + ((height - (yy - y)) / Math.max(1, height)) * 0.1 + weave;
+        setPixel(xx, yy, shade(color, light));
+      }
+    }
+  };
   const drawText = (text: string, x: number, y: number, scale: number, color: Color) => {
     let cursor = x;
     for (const character of text.toUpperCase().slice(0, 10)) {
@@ -303,9 +320,26 @@ function drawCharacter(user: User) {
   circle(172, 200, 3, hex("#34d399"));
   circle(320, 555, 105, hex("#090f1c"));
 
-  // Every profile uses the same human base and the same layer order. Empty
-  // inventories receive neutral starter clothing instead of a separate
-  // stickman renderer, so the owner and public profiles never diverge.
+  // The default avatar is intentionally a single, stable stickman. Clothing
+  // is drawn only after an item is equipped, so the avatar never looks like it
+  // is wearing random placeholder clothes.
+  if (!equipped.length) {
+    const stick = hex("#f8fafc");
+    circle(320, 178, 44, skin);
+    circle(304, 174, 5, ink);
+    circle(336, 174, 5, ink);
+    line(306, 202, 334, 202, 3, hex("#a05252"));
+    line(320, 224, 320, 382, 10, stick);
+    line(320, 258, 245, 332, 10, stick);
+    line(320, 258, 395, 332, 10, stick);
+    line(320, 382, 260, 492, 10, stick);
+    line(320, 382, 380, 492, 10, stick);
+    circle(242, 335, 9, skin);
+    circle(398, 335, 9, skin);
+    line(250, 496, 274, 496, 8, stick);
+    line(366, 496, 390, 496, 8, stick);
+    return makePng(pixels);
+  }
 
   const shoesStyle = styleFor(shoes, "#38bdf8");
   const pantsStyle = styleFor(pants, "#334155");
@@ -315,17 +349,18 @@ function drawCharacter(user: User) {
   const shirtName = shirt?.name.toLowerCase() ?? "";
   const jacketName = jacket?.name.toLowerCase() ?? "";
   const shoesName = shoes?.name.toLowerCase() ?? "";
+  const accessoryName = accessory?.name.toLowerCase() ?? "";
 
   // Pants: separate legs, waistband, pockets, stitching and brand-specific side details.
-  rect(278, 360, 108, 24, pantsStyle.dark);
-  rect(282, 370, 36, 125, pantsStyle.base);
-  rect(322, 370, 36, 125, pantsStyle.base);
+  fabricRect(278, 360, 108, 24, pantsStyle.dark, 11);
+  fabricRect(282, 370, 36, 125, pantsStyle.base, 13);
+  fabricRect(322, 370, 36, 125, pantsStyle.base, 17);
   line(320, 372, 320, 493, 4, pantsStyle.dark);
   line(285, 378, 315, 378, 2, pantsStyle.secondary);
   line(325, 378, 355, 378, 2, pantsStyle.secondary);
   if (pantsName.includes("cargo")) {
-    rect(278, 414, 18, 28, pantsStyle.secondary);
-    rect(344, 414, 18, 28, pantsStyle.secondary);
+    fabricRect(278, 414, 18, 28, pantsStyle.secondary, 19);
+    fabricRect(344, 414, 18, 28, pantsStyle.secondary, 23);
     line(279, 418, 295, 418, 2, pantsStyle.light);
     line(345, 418, 361, 418, 2, pantsStyle.light);
   } else if (pantsName.includes("denim")) {
@@ -336,8 +371,8 @@ function drawCharacter(user: User) {
   } else if (pantsName.includes("jogger")) {
     line(286, 391, 314, 391, 5, pantsStyle.secondary);
     line(326, 391, 354, 391, 5, pantsStyle.secondary);
-    rect(280, 480, 40, 15, pantsStyle.dark);
-    rect(320, 480, 40, 15, pantsStyle.dark);
+    fabricRect(280, 480, 40, 15, pantsStyle.dark, 29);
+    fabricRect(320, 480, 40, 15, pantsStyle.dark, 31);
   } else {
     line(288, 398, 312, 398, 2, pantsStyle.secondary);
     line(328, 398, 352, 398, 2, pantsStyle.secondary);
@@ -349,10 +384,10 @@ function drawCharacter(user: User) {
   logo(pants, 294, 423, 1);
 
   // Shoes: a low-top silhouette with sole, tongue and a logo on each shoe.
-  rect(267, 485, 66, 25, shoesStyle.base);
-  rect(331, 485, 66, 25, shoesStyle.base);
-  rect(263, 506, 73, 9, shoesStyle.light);
-  rect(327, 506, 73, 9, shoesStyle.light);
+  fabricRect(267, 485, 66, 25, shoesStyle.base, 37);
+  fabricRect(331, 485, 66, 25, shoesStyle.base, 41);
+  fabricRect(263, 506, 73, 9, shoesStyle.light, 43);
+  fabricRect(327, 506, 73, 9, shoesStyle.light, 47);
   line(274, 488, 320, 488, 3, shoesStyle.secondary);
   line(338, 488, 384, 488, 3, shoesStyle.secondary);
   if (shoesName.includes("air max") || shoesName.includes("runner")) {
@@ -363,13 +398,13 @@ function drawCharacter(user: User) {
   logo(shoes, 346, 493, 1);
 
   // Shirt: fitted torso with neckline, sleeves and brand pattern.
-  rect(270, 245, 100, 145, shirtStyle.base);
+  fabricRect(270, 245, 100, 145, shirtStyle.base, 53);
   line(279, 250, 320, 270, 15, shirtStyle.base);
   line(361, 250, 320, 270, 15, shirtStyle.base);
   line(305, 248, 320, 260, 5, shirtStyle.secondary);
   line(335, 248, 320, 260, 5, shirtStyle.secondary);
   if (shirtName.includes("polo")) {
-    rect(314, 260, 12, 72, shirtStyle.secondary);
+    fabricRect(314, 260, 12, 72, shirtStyle.secondary, 59);
     line(320, 263, 320, 295, 2, shirtStyle.light);
   } else if (brandFor(shirt) === "BURBERRY") {
     for (let stripe = 0; stripe < 5; stripe += 1) {
@@ -377,8 +412,8 @@ function drawCharacter(user: User) {
       line(270, 270 + stripe * 24, 370, 270 + stripe * 24, 2, shirtStyle.secondary);
     }
   } else if (brandFor(shirt) === "GUCCI" || brandFor(shirt) === "TOMMY") {
-    rect(270, 310, 100, 15, shirtStyle.secondary);
-    rect(270, 325, 100, 10, shirtStyle.accent);
+    fabricRect(270, 310, 100, 15, shirtStyle.secondary, 61);
+    fabricRect(270, 325, 100, 10, shirtStyle.accent, 67);
   } else if (brandFor(shirt) === "ADIDAS") {
     line(280, 275, 280, 375, 5, shirtStyle.secondary);
     line(289, 275, 289, 375, 5, shirtStyle.secondary);
@@ -389,16 +424,16 @@ function drawCharacter(user: User) {
   }
   logo(shirt, 305, 302, 2);
   if (jacket) {
-    rect(260, 245, 120, 145, jacketStyle.base);
+    fabricRect(260, 245, 120, 145, jacketStyle.base, 71);
     if (jacketName.includes("bomber")) {
-      rect(260, 370, 120, 20, jacketStyle.dark);
+      fabricRect(260, 370, 120, 20, jacketStyle.dark, 73);
       line(270, 250, 320, 274, 12, jacketStyle.secondary);
       line(370, 250, 320, 274, 12, jacketStyle.secondary);
     } else if (jacketName.includes("puffer")) {
       for (let row = 0; row < 5; row += 1) line(264, 265 + row * 24, 376, 265 + row * 24, 5, jacketStyle.secondary);
     } else if (jacketName.includes("parka")) {
-      rect(270, 255, 100, 120, jacketStyle.secondary);
-      rect(278, 267, 84, 104, jacketStyle.base);
+      fabricRect(270, 255, 100, 120, jacketStyle.secondary, 79);
+      fabricRect(278, 267, 84, 104, jacketStyle.base, 83);
       line(320, 255, 320, 380, 5, jacketStyle.dark);
     }
     line(320, 250, 320, 380, 4, jacketStyle.light);
@@ -424,38 +459,71 @@ function drawCharacter(user: User) {
     const hatName = hat.name.toLowerCase();
     if (hatName.includes("фуражка")) {
       // Peaked service cap for the two general's-cap catalogue items.
-      rect(278, 101, 84, 25, hatStyle.base);
-      rect(266, 122, 108, 12, hatStyle.secondary);
-      rect(290, 106, 60, 7, hatStyle.accent);
-      rect(313, 108, 14, 12, hatStyle.light);
+      fabricRect(278, 101, 84, 25, hatStyle.base, 89);
+      fabricRect(266, 122, 108, 12, hatStyle.secondary, 97);
+      fabricRect(290, 106, 60, 7, hatStyle.accent, 101);
+      fabricRect(313, 108, 14, 12, hatStyle.light, 103);
       circle(320, 114, 4, hatStyle.accent);
       line(272, 135, 368, 135, 8, hatStyle.dark);
     } else if (hatName.includes("панама")) {
-      rect(274, 103, 92, 28, hatStyle.base);
-      rect(260, 124, 120, 9, hatStyle.secondary);
+      fabricRect(274, 103, 92, 28, hatStyle.base, 107);
+      fabricRect(260, 124, 120, 9, hatStyle.secondary, 109);
     } else {
-      rect(292, 90, 58, 26, hatStyle.base);
-      rect(300, 112, 80, 8, hatStyle.secondary);
+      fabricRect(292, 90, 58, 26, hatStyle.base, 113);
+      fabricRect(300, 112, 80, 8, hatStyle.secondary, 127);
     }
     logo(hat, 305, 104, 1);
   }
-  if (accessory?.name.includes("цепочка")) {
-    line(284, 247, 320, 280, 5, hex("#facc15"));
-    line(320, 280, 356, 247, 5, hex("#facc15"));
-    circle(320, 282, 10, hex("#facc15"));
+  if (accessoryName.includes("цепочка")) {
+    const chain = accessoryName.includes("платин") ? hex("#e5e7eb") : hex("#facc15");
+    line(284, 247, 320, 280, 5, shade(chain, 0.65));
+    line(284, 245, 320, 278, 3, chain);
+    line(320, 278, 356, 245, 3, chain);
+    circle(320, 282, 10, shade(chain, 0.65));
+    circle(320, 280, 6, chain);
   }
-  if (accessory?.name.includes("очки")) {
-    rect(278, 169, 38, 22, hex("#111827"));
-    rect(324, 169, 38, 22, hex("#111827"));
+  if (accessoryName.includes("очки")) {
+    const frames = accessoryName.includes("платин") ? hex("#e5e7eb") : hex("#facc15");
+    const lenses = accessoryName.includes("платин") ? [186, 218, 235, 248] as Color : [17, 24, 39, 255] as Color;
+    rect(278, 169, 38, 22, lenses);
+    rect(324, 169, 38, 22, lenses);
+    line(278, 169, 316, 169, 3, frames);
+    line(324, 169, 362, 169, 3, frames);
+    line(278, 190, 316, 190, 3, frames);
+    line(324, 190, 362, 190, 3, frames);
     line(316, 178, 324, 178, 4, ink);
   }
-  if (accessory?.name.includes("рюкзак")) {
-    rect(245, 270, 25, 90, hex("#b45309"));
+  if (accessoryName.includes("браслет")) {
+    const bracelet = accessoryName.includes("платин") ? hex("#e5e7eb") : hex("#facc15");
+    line(410, 389, 432, 397, 7, shade(bracelet, 0.58));
+    line(409, 386, 431, 394, 4, bracelet);
+    line(409, 393, 431, 401, 3, bracelet);
   }
-  if (accessory?.name.includes("папироса")) {
-    line(342, 222, 375, 214, 6, hex("#facc15"));
-    rect(373, 211, 9, 7, hex("#f97316"));
-    line(382, 208, 392, 190, 3, hex("#e2e8f0"));
+  if (accessoryName.includes("кольцо")) {
+    const ring = hex("#facc15");
+    circle(423, 399, 8, ring);
+    circle(423, 399, 4, skin);
+    circle(423, 395, 3, hex("#fff0a6"));
+  }
+  if (accessoryName.includes("рюкзак")) {
+    fabricRect(245, 270, 25, 90, hex("#b45309"), 131);
+  }
+  if (accessoryName.includes("сигар") || accessoryName.includes("папирос")) {
+    const platinum = accessoryName.includes("платин");
+    const silver = accessoryName.includes("серебр");
+    const gold = platinum ? hex("#e5e7eb") : silver ? hex("#cbd5e1") : hex("#d4a72c");
+    const goldLight = platinum ? hex("#ffffff") : silver ? hex("#f8fafc") : hex("#fff0a6");
+    const tobacco = hex("#7c2d12");
+    // A thick, rounded cigar at the lips: wrapper highlight, paper seam,
+    // tobacco end and a thin translucent smoke trail.
+    line(338, 222, 374, 214, 14, shade(gold, 0.58));
+    line(338, 219, 375, 211, 9, gold);
+    line(343, 217, 350, 215, 3, goldLight);
+    line(355, 216, 358, 215, 2, shade(goldLight, 0.72));
+    circle(377, 212, 4, tobacco);
+    circle(379, 211, 3, hex("#fb923c"));
+    line(385, 208, 392, 196, 3, [226, 232, 240, 145]);
+    line(392, 196, 387, 185, 3, [226, 232, 240, 115]);
   }
 
   return makePng(pixels);
@@ -547,54 +615,38 @@ export function renderAssetCard(product: CatalogItem) {
   if (product.kind === "cars") {
     rect(42, 420, WIDTH - 84, 100, hex("#334155"));
     rect(110, 405, 420, 15, hex("#64748b"));
-    if (productName.includes("бэт-мобиль")) {
-      const batBlack = hex("#111827");
-      const batEdge = hex("#475569");
-      const batGlass = hex("#334155");
-      rect(108, 374, 424, 54, batBlack);
-      rect(154, 332, 332, 46, batBlack);
-      line(154, 332, 208, 278, 12, batBlack);
-      line(208, 278, 388, 278, 12, batBlack);
-      line(388, 278, 486, 332, 12, batBlack);
-      line(108, 374, 532, 374, 7, batEdge);
-      rect(216, 300, 86, 28, batGlass);
-      rect(310, 300, 92, 28, batGlass);
-      line(208, 278, 228, 238, 9, batBlack);
-      line(228, 238, 250, 278, 9, batBlack);
-      line(390, 278, 420, 238, 9, batBlack);
-      line(420, 238, 438, 286, 9, batBlack);
-      circle(200, 430, 35, dark);
-      circle(440, 430, 35, dark);
-      circle(200, 430, 15, hex("#94a3b8"));
-      circle(440, 430, 15, hex("#94a3b8"));
-      rect(285, 270, 70, 10, hex("#e2e8f0"));
-      circle(300, 265, 10, hex("#ef4444"));
-      circle(340, 265, 10, hex("#2563eb"));
-      line(138, 397, 190, 397, 8, hex("#ef4444"));
-      line(450, 397, 502, 397, 8, hex("#2563eb"));
-     } else if (productName.includes("самолёт") || productName.includes("кукурузник")) {
-       // Small toy crop-duster silhouette: short fuselage, high wing,
-       // propeller, landing gear and agricultural stripe.
-       const planeBody = hex("#f1f5f9");
-       const planeShadow = hex("#94a3b8");
-       const planeRed = hex("#b91c1c");
-       line(214, 356, 424, 356, 24, planeBody);
-       line(252, 348, 382, 348, 8, planeRed);
-       line(300, 352, 278, 294, 12, planeShadow);
-       line(314, 350, 354, 294, 12, planeShadow);
-       line(220, 354, 194, 326, 9, planeShadow);
-       line(410, 354, 438, 326, 9, planeShadow);
-       for (const x of [268, 290, 312, 334]) {
-         circle(x, 350, 4, hex("#2563eb"));
-       }
-       circle(426, 356, 9, hex("#f59e0b"));
-       line(426, 347, 426, 320, 4, hex("#f8fafc"));
-       line(426, 365, 426, 392, 4, planeShadow);
-       line(272, 374, 265, 394, 4, planeShadow);
-       line(356, 374, 363, 394, 4, planeShadow);
-       circle(263, 399, 7, dark);
-       circle(365, 399, 7, dark);
-       drawText("AG-1", 280, 555, 3, white);
+    if (productName.includes("кукурузник")) {
+      const plane = hex("#f59e0b");
+      line(150, 355, 490, 355, 14, plane);
+      line(230, 330, 410, 330, 10, plane);
+      line(300, 250, 300, 380, 9, plane);
+      line(300, 285, 470, 330, 8, plane);
+      line(300, 285, 130, 330, 8, plane);
+      circle(175, 355, 10, dark);
+      circle(465, 355, 10, dark);
+      rect(286, 260, 30, 20, hex("#bae6fd"));
+    } else if (productName.includes("детский")) {
+      const toy = hex("#ef4444");
+      rect(180, 365, 280, 48, toy);
+      rect(235, 330, 160, 38, toy);
+      rect(255, 338, 48, 24, hex("#bae6fd"));
+      rect(327, 338, 48, 24, hex("#bae6fd"));
+      circle(240, 425, 25, dark);
+      circle(400, 425, 25, dark);
+      circle(240, 425, 10, hex("#facc15"));
+      circle(400, 425, 10, hex("#facc15"));
+    } else if (productName.includes("бэт-мобил")) {
+      const bat = hex("#111827");
+      rect(105, 370, 430, 54, bat);
+      line(150, 370, 215, 300, 10, bat);
+      line(490, 370, 425, 300, 10, bat);
+      rect(235, 315, 170, 55, bat);
+      rect(260, 325, 55, 28, hex("#334155"));
+      rect(325, 325, 55, 28, hex("#334155"));
+      circle(190, 430, 31, dark);
+      circle(450, 430, 31, dark);
+      circle(190, 430, 11, hex("#facc15"));
+      circle(450, 430, 11, hex("#facc15"));
     } else if (productName.includes("танк")) {
       rect(170, 325, 300, 100, accent);
       rect(250, 270, 140, 65, accent);
@@ -623,90 +675,94 @@ export function renderAssetCard(product: CatalogItem) {
       circle(435, 430, 13, hex("#cbd5e1"));
       rect(126, 380, 28, 12, hex("#fef08a"));
       rect(462, 380, 28, 12, hex("#ef4444"));
+    } else if (productName.includes("mustang")) {
+      const muscle = hex("#b91c1c");
+      rect(105, 360, 430, 65, muscle);
+      rect(165, 315, 235, 50, muscle);
+      line(400, 315, 480, 360, 10, muscle);
+      rect(190, 325, 92, 28, hex("#bae6fd"));
+      rect(294, 325, 88, 28, hex("#bae6fd"));
+      line(320, 365, 320, 423, 8, hex("#fef3c7"));
+      circle(195, 430, 34, dark);
+      circle(445, 430, 34, dark);
+      circle(195, 430, 13, hex("#cbd5e1"));
+      circle(445, 430, 13, hex("#cbd5e1"));
     } else {
-      rect(120, 340, 400, 85, accent);
-      line(190, 340, 245, 285, 10, accent);
-      line(245, 285, 390, 285, 10, accent);
-      line(390, 285, 450, 340, 10, accent);
-      rect(245, 300, 62, 35, hex("#bae6fd"));
-      rect(320, 300, 72, 35, hex("#bae6fd"));
+      const premium = /bugatti|lamborghini|ferrari|mclaren|porsche|pagani|koenigsegg/.test(productName);
+      const body = premium ? hex("#7c3aed") : accent;
+      rect(premium ? 105 : 120, 350, premium ? 430 : 400, 75, body);
+      line(190, 350, 245, premium ? 275 : 285, 10, body);
+      line(245, premium ? 275 : 285, 390, premium ? 275 : 285, 10, body);
+      line(390, premium ? 275 : 285, 450, 350, 10, body);
+      rect(245, premium ? 292 : 300, 62, 35, hex("#bae6fd"));
+      rect(320, premium ? 292 : 300, 72, 35, hex("#bae6fd"));
+      if (productName.includes("bugatti")) {
+        circle(320, 354, 17, dark);
+        circle(320, 354, 8, hex("#cbd5e1"));
+      }
       circle(205, 430, 32, dark);
       circle(435, 430, 32, dark);
       circle(205, 430, 13, hex("#cbd5e1"));
       circle(435, 430, 13, hex("#cbd5e1"));
-       if (productName.includes("полицейский") || productName.includes("мигалк")) {
+      if (productName.includes("полицейский") || productName.includes("мигалк")) {
         rect(292, 278, 56, 10, hex("#e2e8f0"));
         circle(305, 274, 9, hex("#ef4444"));
         circle(335, 274, 9, hex("#2563eb"));
       }
     }
-  } else if (productName.includes("папирос") || /marlboro|kent|winston|camel|dunhill/.test(productName)) {
-    const gold = hex("#f6c453");
-     const goldShadow = hex("#a16207");
-     const paper = hex("#fff7c2");
-     const ember = hex("#f97316");
-     // A thicker, shaded cigarette with a paper body, gold filter, ash and smoke.
-     line(204, 365, 444, 365, 34, goldShadow);
-     line(204, 358, 444, 358, 28, gold);
-     line(210, 351, 424, 351, 7, paper);
-     line(214, 366, 422, 366, 3, hex("#d4a72c"));
-     rect(380, 343, 34, 30, paper);
-     line(380, 347, 414, 347, 4, goldShadow);
-     line(380, 356, 414, 356, 3, hex("#fef3c7"));
-     line(444, 358, 468, 358, 28, hex("#fef3c7"));
-     line(468, 358, 490, 358, 25, ember);
-     circle(490, 358, 12, hex("#fb923c"));
-     line(492, 340, 506, 312, 4, hex("#cbd5e1"));
-     line(506, 330, 522, 302, 3, hex("#94a3b8"));
-     drawText(product.name.includes("Золотая") ? "GOLD" : "RP", 275, 315, 3, hex("#713f12"));
-  } else if (product.kind === "houses") {
-    rect(118, 320, 404, 200, accent);
-    line(94, 320, 320, 170, 8, hex("#f8fafc"));
-    line(320, 170, 546, 320, 8, hex("#f8fafc"));
-    rect(265, 400, 90, 120, hex("#78350f"));
-    rect(165, 365, 66, 66, hex("#bae6fd"));
-    rect(407, 365, 66, 66, hex("#bae6fd"));
-    if (productName.includes("пентхаус") || productName.includes("вилла")) {
+  } else {
+    const isApartment = /квартир|общежит|барак/.test(productName);
+    const isGarage = productName.includes("гараж");
+    const isCastle = /замок|дворец|имени|резиденц/.test(productName);
+    const isTower = /башня|небесн|пентхаус/.test(productName);
+    const isIsland = /остров|озер|побереж/.test(productName);
+    const building = isCastle ? hex("#a16207") : isApartment ? hex("#64748b") : accent;
+    rect(isTower ? 205 : 118, isTower ? 240 : 320, isTower ? 230 : 404, isTower ? 280 : 200, building);
+    if (isTower) {
+      rect(250, 270, 42, 35, hex("#bae6fd"));
+      rect(348, 270, 42, 35, hex("#bae6fd"));
+      rect(250, 330, 42, 35, hex("#bae6fd"));
+      rect(348, 330, 42, 35, hex("#bae6fd"));
+      rect(250, 390, 42, 35, hex("#bae6fd"));
+      rect(348, 390, 42, 35, hex("#bae6fd"));
+      line(320, 220, 320, 180, 5, hex("#cbd5e1"));
+      circle(320, 170, 8, hex("#ef4444"));
+    } else if (isCastle) {
+      rect(95, 285, 70, 235, building);
+      rect(475, 285, 70, 235, building);
+      line(95, 285, 130, 235, 8, building);
+      line(130, 235, 165, 285, 8, building);
+      line(475, 285, 510, 235, 8, building);
+      line(510, 235, 545, 285, 8, building);
+      line(94, 320, 320, 170, 8, hex("#f8fafc"));
+      line(320, 170, 546, 320, 8, hex("#f8fafc"));
+    } else {
+      line(94, 320, 320, 170, 8, hex("#f8fafc"));
+      line(320, 170, 546, 320, 8, hex("#f8fafc"));
+    }
+    if (isGarage) {
+      rect(220, 355, 200, 165, hex("#334155"));
+      rect(245, 385, 150, 135, hex("#111827"));
+      line(245, 430, 395, 430, 3, hex("#64748b"));
+    } else if (isApartment) {
+      rect(182, 348, 50, 50, hex("#bae6fd"));
+      rect(408, 348, 50, 50, hex("#bae6fd"));
+      rect(182, 425, 50, 50, hex("#bae6fd"));
+      rect(408, 425, 50, 50, hex("#bae6fd"));
+      rect(275, 405, 90, 115, hex("#334155"));
+    } else {
+      rect(265, 400, 90, 120, hex("#78350f"));
+      rect(165, 365, 66, 66, hex("#bae6fd"));
+      rect(407, 365, 66, 66, hex("#bae6fd"));
+    }
+    if (isIsland || productName.includes("вилла")) {
       rect(510, 265, 24, 165, hex("#94a3b8"));
       circle(522, 245, 25, hex("#34d399"));
+      circle(115, 300, 35, hex("#34d399"));
     }
-  } else if (product.kind === "sneakers") {
-    const shoe = accent;
-    line(180, 350, 360, 350, 72, shoe);
-    line(330, 350, 475, 400, 54, shoe);
-    line(170, 387, 490, 430, 16, hex("#f8fafc"));
-    line(215, 324, 310, 375, 7, hex("#e2e8f0"));
-    line(240, 315, 330, 370, 7, hex("#e2e8f0"));
-    circle(160, 390, 12, hex("#0f172a"));
-    circle(492, 434, 12, hex("#0f172a"));
-  } else if (product.kind === "shirts" || product.kind === "jackets") {
-    rect(232, 248, 176, 270, accent);
-    line(232, 265, 152, 344, 34, accent);
-    line(408, 265, 488, 344, 34, accent);
-    line(320, 248, 320, 518, 5, hex("#e2e8f0"));
-    line(272, 274, 320, 310, 7, hex("#f8fafc"));
-    line(368, 274, 320, 310, 7, hex("#f8fafc"));
-    if (product.kind === "jackets") {
-      rect(250, 370, 52, 58, hex("#0f172a"));
-      rect(338, 370, 52, 58, hex("#0f172a"));
+    if (isCastle) {
+      rect(300, 405, 40, 115, hex("#451a03"));
     }
-  } else if (product.kind === "pants") {
-    rect(238, 250, 164, 84, accent);
-    line(270, 320, 246, 510, 88, accent);
-    line(370, 320, 394, 510, 88, accent);
-    line(320, 330, 320, 500, 7, hex("#0f172a"));
-    line(250, 390, 286, 390, 6, hex("#f8fafc"));
-    line(354, 390, 390, 390, 6, hex("#f8fafc"));
-  } else if (product.kind === "hats") {
-    rect(224, 250, 192, 106, accent);
-    line(166, 356, 474, 356, 24, hex("#e2e8f0"));
-    rect(256, 300, 128, 14, hex("#0f172a"));
-    circle(320, 275, 34, hex("#f8fafc"));
-  } else {
-    circle(320, 350, 112, accent);
-    circle(320, 350, 74, panel);
-    line(245, 350, 395, 350, 8, hex("#f8fafc"));
-    line(320, 275, 320, 425, 8, hex("#f8fafc"));
   }
   drawText(product.name.replace(/[^a-z0-9 ]/gi, "").slice(0, 18) || "RP CITY", 110, 555, 3, white);
   return makePng(pixels);
