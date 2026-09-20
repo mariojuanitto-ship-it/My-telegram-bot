@@ -303,26 +303,9 @@ function drawCharacter(user: User) {
   circle(172, 200, 3, hex("#34d399"));
   circle(320, 555, 105, hex("#090f1c"));
 
-  // The default avatar is intentionally a single, stable stickman. Clothing
-  // is drawn only after an item is equipped, so the avatar never looks like it
-  // is wearing random placeholder clothes.
-  if (!equipped.length) {
-    const stick = hex("#f8fafc");
-    circle(320, 178, 44, skin);
-    circle(304, 174, 5, ink);
-    circle(336, 174, 5, ink);
-    line(306, 202, 334, 202, 3, hex("#a05252"));
-    line(320, 224, 320, 382, 10, stick);
-    line(320, 258, 245, 332, 10, stick);
-    line(320, 258, 395, 332, 10, stick);
-    line(320, 382, 260, 492, 10, stick);
-    line(320, 382, 380, 492, 10, stick);
-    circle(242, 335, 9, skin);
-    circle(398, 335, 9, skin);
-    line(250, 496, 274, 496, 8, stick);
-    line(366, 496, 390, 496, 8, stick);
-    return makePng(pixels);
-  }
+  // Every profile uses the same human base and the same layer order. Empty
+  // inventories receive neutral starter clothing instead of a separate
+  // stickman renderer, so the owner and public profiles never diverge.
 
   const shoesStyle = styleFor(shoes, "#38bdf8");
   const pantsStyle = styleFor(pants, "#334155");
@@ -589,21 +572,29 @@ export function renderAssetCard(product: CatalogItem) {
       circle(340, 265, 10, hex("#2563eb"));
       line(138, 397, 190, 397, 8, hex("#ef4444"));
       line(450, 397, 502, 397, 8, hex("#2563eb"));
-    } else if (productName.includes("самолёт")) {
-      const planeBody = hex("#e2e8f0");
-      const planeShadow = hex("#94a3b8");
-      const planeBlue = hex("#38bdf8");
-      line(168, 360, 478, 360, 34, planeBody);
-      line(218, 342, 445, 342, 12, planeBlue);
-      line(294, 348, 242, 270, 16, planeShadow);
-      line(330, 350, 410, 270, 16, planeShadow);
-      line(205, 353, 176, 300, 12, planeShadow);
-      line(430, 353, 478, 300, 12, planeShadow);
-      line(182, 360, 126, 382, 9, planeBlue);
-      line(462, 360, 520, 382, 9, planeBlue);
-      for (const x of [270, 305, 340, 375]) circle(x, 350, 7, hex("#2563eb"));
-      circle(480, 360, 15, hex("#f59e0b"));
-      drawText("7777", 250, 555, 3, white);
+     } else if (productName.includes("самолёт") || productName.includes("кукурузник")) {
+       // Small toy crop-duster silhouette: short fuselage, high wing,
+       // propeller, landing gear and agricultural stripe.
+       const planeBody = hex("#f1f5f9");
+       const planeShadow = hex("#94a3b8");
+       const planeRed = hex("#b91c1c");
+       line(214, 356, 424, 356, 24, planeBody);
+       line(252, 348, 382, 348, 8, planeRed);
+       line(300, 352, 278, 294, 12, planeShadow);
+       line(314, 350, 354, 294, 12, planeShadow);
+       line(220, 354, 194, 326, 9, planeShadow);
+       line(410, 354, 438, 326, 9, planeShadow);
+       for (const x of [268, 290, 312, 334]) {
+         circle(x, 350, 4, hex("#2563eb"));
+       }
+       circle(426, 356, 9, hex("#f59e0b"));
+       line(426, 347, 426, 320, 4, hex("#f8fafc"));
+       line(426, 365, 426, 392, 4, planeShadow);
+       line(272, 374, 265, 394, 4, planeShadow);
+       line(356, 374, 363, 394, 4, planeShadow);
+       circle(263, 399, 7, dark);
+       circle(365, 399, 7, dark);
+       drawText("AG-1", 280, 555, 3, white);
     } else if (productName.includes("танк")) {
       rect(170, 325, 300, 100, accent);
       rect(250, 270, 140, 65, accent);
@@ -651,18 +642,23 @@ export function renderAssetCard(product: CatalogItem) {
     }
   } else if (productName.includes("папирос") || /marlboro|kent|winston|camel|dunhill/.test(productName)) {
     const gold = hex("#f6c453");
-    const goldShadow = hex("#a16207");
-    const ember = hex("#f97316");
-    rect(116, 274, 408, 18, hex("#0b1020"));
-    line(152, 344, 480, 344, 34, goldShadow);
-    line(152, 336, 480, 336, 25, gold);
-    line(180, 325, 452, 325, 5, hex("#fff7c2"));
-    rect(195, 319, 34, 34, hex("#fff7c2"));
-    line(458, 336, 493, 336, 25, hex("#fef3c7"));
-    line(493, 336, 516, 336, 22, ember);
-    line(508, 302, 520, 278, 5, hex("#cbd5e1"));
-    line(520, 298, 536, 274, 4, hex("#94a3b8"));
-    drawText(product.name.includes("Золотая") ? "GOLD" : "RP", 268, 315, 3, hex("#713f12"));
+     const goldShadow = hex("#a16207");
+     const paper = hex("#fff7c2");
+     const ember = hex("#f97316");
+     // A thicker, shaded cigarette with a paper body, gold filter, ash and smoke.
+     line(204, 365, 444, 365, 34, goldShadow);
+     line(204, 358, 444, 358, 28, gold);
+     line(210, 351, 424, 351, 7, paper);
+     line(214, 366, 422, 366, 3, hex("#d4a72c"));
+     rect(380, 343, 34, 30, paper);
+     line(380, 347, 414, 347, 4, goldShadow);
+     line(380, 356, 414, 356, 3, hex("#fef3c7"));
+     line(444, 358, 468, 358, 28, hex("#fef3c7"));
+     line(468, 358, 490, 358, 25, ember);
+     circle(490, 358, 12, hex("#fb923c"));
+     line(492, 340, 506, 312, 4, hex("#cbd5e1"));
+     line(506, 330, 522, 302, 3, hex("#94a3b8"));
+     drawText(product.name.includes("Золотая") ? "GOLD" : "RP", 275, 315, 3, hex("#713f12"));
   } else if (product.kind === "houses") {
     rect(118, 320, 404, 200, accent);
     line(94, 320, 320, 170, 8, hex("#f8fafc"));
