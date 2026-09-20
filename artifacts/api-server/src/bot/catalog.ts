@@ -19,6 +19,8 @@ export type CatalogItem = {
   marketplaceDisabled?: boolean;
   passivePerSecond?: string;
   imageUrl?: string;
+  /** Explicit government buyback amount. */
+  governmentSalePrice?: string;
 };
 
 const brands = [
@@ -235,13 +237,16 @@ export const catalog: CatalogItem[] = [
     price: "25000000000",
     hidden: true,
     marketplaceDisabled: true,
+    governmentSalePrice: "0",
   },
   {
     id: 7777,
     kind: "cars",
-    name: "Детский самолёт",
+    name: "Игрушечный кукурузник",
     price: "777000000",
     marketplaceDisabled: true,
+    hidden: true,
+    governmentSalePrice: "0",
   },
   {
     id: 9001,
