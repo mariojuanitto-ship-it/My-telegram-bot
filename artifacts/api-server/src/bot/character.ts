@@ -516,8 +516,8 @@ function drawCharacter(user: User) {
     const tobacco = hex("#7c2d12");
     // A thick, rounded cigar at the lips: wrapper highlight, paper seam,
     // tobacco end and a thin translucent smoke trail.
-    line(338, 222, 374, 214, 14, shade(gold, 0.58));
-    line(338, 219, 375, 211, 9, gold);
+    line(338, 222, 374, 214, 18, shade(gold, 0.58));
+    line(338, 219, 375, 211, 13, gold);
     line(343, 217, 350, 215, 3, goldLight);
     line(355, 216, 358, 215, 2, shade(goldLight, 0.72));
     circle(377, 212, 4, tobacco);
@@ -716,6 +716,7 @@ export function renderAssetCard(product: CatalogItem) {
     const isCastle = /замок|дворец|имени|резиденц/.test(productName);
     const isTower = /башня|небесн|пентхаус/.test(productName);
     const isIsland = /остров|озер|побереж/.test(productName);
+    const isModern = /соврем|умный|клубн|таунхаус|бизнесмен|лофт/.test(productName);
     const building = isCastle ? hex("#a16207") : isApartment ? hex("#64748b") : accent;
     rect(isTower ? 205 : 118, isTower ? 240 : 320, isTower ? 230 : 404, isTower ? 280 : 200, building);
     if (isTower) {
@@ -737,8 +738,10 @@ export function renderAssetCard(product: CatalogItem) {
       line(94, 320, 320, 170, 8, hex("#f8fafc"));
       line(320, 170, 546, 320, 8, hex("#f8fafc"));
     } else {
-      line(94, 320, 320, 170, 8, hex("#f8fafc"));
-      line(320, 170, 546, 320, 8, hex("#f8fafc"));
+      if (!isModern) {
+        line(94, 320, 320, 170, 8, hex("#f8fafc"));
+        line(320, 170, 546, 320, 8, hex("#f8fafc"));
+      }
     }
     if (isGarage) {
       rect(220, 355, 200, 165, hex("#334155"));
@@ -750,6 +753,17 @@ export function renderAssetCard(product: CatalogItem) {
       rect(182, 425, 50, 50, hex("#bae6fd"));
       rect(408, 425, 50, 50, hex("#bae6fd"));
       rect(275, 405, 90, 115, hex("#334155"));
+    } else if (isModern) {
+      // Flat-roof architecture with glass facade, balcony and a separate
+      // garage gives modern homes a silhouette distinct from cottages.
+      rect(110, 300, 420, 18, hex("#0f172a"));
+      rect(150, 325, 340, 195, building);
+      rect(180, 350, 105, 78, hex("#bae6fd"));
+      rect(305, 350, 150, 78, hex("#dbeafe"));
+      rect(180, 445, 275, 18, hex("#475569"));
+      rect(195, 462, 90, 58, hex("#1e293b"));
+      rect(350, 462, 105, 58, hex("#1e293b"));
+      line(300, 325, 300, 520, 4, hex("#e2e8f0"));
     } else {
       rect(265, 400, 90, 120, hex("#78350f"));
       rect(165, 365, 66, 66, hex("#bae6fd"));

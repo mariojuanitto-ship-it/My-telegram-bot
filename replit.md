@@ -42,7 +42,9 @@ Telegram RP-бот с профилем игрока, экономикой, ма�
 - Persistent player profile with coins, donation balance, level and experience.
 - Bottom Telegram keyboard for profile, shop, donation, support, casino, Forbes, clans, marketplace, exchange and jobs.
 - Clothing, accessory, car and house catalogs with IDs, buying, inventory, equipping and government resale.
+- Donation cases: accessory and automobile cases cost 2,000 donation, move to inventory, open once, and grant a weighted reward.
 - Admin-only grants, support replies, promo-code creation and catalog ID lookup.
+- Admin advertisement preview/broadcast and a registered bot-user list.
 
 ## User preferences
 

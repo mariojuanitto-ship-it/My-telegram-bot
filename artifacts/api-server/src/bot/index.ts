@@ -53,6 +53,8 @@ type Session =
   | { type: "adminItemId"; targetId: number }
   | { type: "adminReply"; ticketId: number }
   | { type: "adminBroadcast" }
+  | { type: "adminAdvertiseText" }
+  | { type: "adminAdvertiseConfirm"; text: string }
   | { type: "promoCode"; promoType: "money" | "donate" | "item" }
   | { type: "promoMax"; promoType: "money" | "donate" | "item"; code: string }
   | { type: "promoValue"; promoType: "money" | "donate" | "item"; code: string; max: number };
@@ -104,6 +106,18 @@ const kindLabel = (product: CatalogItem) => categoryLabels[product.kind];
 const productPhoto = (product: CatalogItem) => {
   return renderAssetCard(product);
 };
+
+function pickCaseReward(product: CatalogItem) {
+  const rewards = product.caseRewards ?? [];
+  const totalWeight = rewards.reduce((sum, reward) => sum + reward.chance, 0);
+  if (!totalWeight) return undefined;
+  let roll = Math.random() * totalWeight;
+  for (const reward of rewards) {
+    roll -= reward.chance;
+    if (roll < 0) return item(reward.itemId);
+  }
+  return item(rewards[rewards.length - 1]?.itemId ?? 0);
+}
 
 const passiveIncomePerSecond = (user: User) =>
   user.inventory.reduce((total, owned) => {
@@ -295,9 +309,12 @@ async function showStore(chatId: number, telegramId: string) {
 
 async function showProduct(chatId: number, product: CatalogItem) {
   const price = product.kind === "donate" ? donate(product.donatePrice ?? "0") : money(product.price);
-  const text = `${product.name}\nКатегория: ${kindLabel(product)}\nЦена: ${price}\nID предмета: ${product.id}`;
+  const caseDetails = product.caseRewards?.length
+    ? `\nСодержимое: ${product.caseRewards.map((reward) => `${item(reward.itemId)?.name ?? "предмет"} — ${reward.chance}%`).join(", ")}`
+    : "";
+  const text = `${product.name}\nКатегория: ${product.caseType ? "Донат-кейс" : kindLabel(product)}\nЦена: ${price}\nID предмета: ${product.id}${caseDetails}`;
   const buyCallback = product.kind === "donate" ? `buydonate:${product.id}` : `buy:${product.id}`;
-  const backCallback = product.kind === "donate" ? "catalog:donate:0" : `catalog:${product.kind}:0`;
+  const backCallback = product.caseType ? "catalog:cases:0" : product.kind === "donate" ? "catalog:donate:0" : `catalog:${product.kind}:0`;
   try {
     await telegram.sendPhoto(chatId, productPhoto(product), text, inline([
       [{ text: "Купить", callback_data: buyCallback }],
@@ -313,7 +330,7 @@ async function showProduct(chatId: number, product: CatalogItem) {
 }
 
 async function showCatalog(chatId: number, kind: CatalogKind, page = 0) {
-  const products = kind === "donate" ? catalog.filter((entry) => entry.kind === kind) : store.itemsByKind(kind);
+  const products = kind === "donate" ? catalog.filter((entry) => entry.kind === kind && !entry.caseType) : store.itemsByKind(kind);
   const pageSize = 6;
   const totalPages = Math.max(1, Math.ceil(products.length / pageSize));
   const safePage = Math.min(Math.max(page, 0), totalPages - 1);
@@ -332,6 +349,29 @@ async function showCatalog(chatId: number, kind: CatalogKind, page = 0) {
   await telegram.sendMessage(
     chatId,
     `${categoryLabels[kind]}\n\n${lines.join("\n\n")}`,
+    inline(rows),
+  );
+}
+
+async function showCases(chatId: number, page = 0) {
+  const products = catalog.filter((entry) => entry.kind === "donate" && entry.caseType);
+  const pageSize = 4;
+  const totalPages = Math.max(1, Math.ceil(products.length / pageSize));
+  const safePage = Math.min(Math.max(page, 0), totalPages - 1);
+  const visible = products.slice(safePage * pageSize, (safePage + 1) * pageSize);
+  const rows: InlineKeyboardButton[][] = visible.map((product) => [{
+    text: `${product.name} · ${product.donatePrice} доната`,
+    callback_data: `product:${product.id}`,
+  }]);
+  const navigation: InlineKeyboardButton[] = [];
+  if (safePage > 0) navigation.push({ text: "←", callback_data: `catalog:cases:${safePage - 1}` });
+  navigation.push({ text: `${safePage + 1}/${totalPages}`, callback_data: "noop" });
+  if (safePage < totalPages - 1) navigation.push({ text: "→", callback_data: `catalog:cases:${safePage + 1}` });
+  rows.push(navigation);
+  rows.push([{ text: "Назад в донат", callback_data: "donate:shop" }]);
+  await telegram.sendMessage(
+    chatId,
+    "🎁 Кейсы\n\nКаждый кейс стоит 2 000 доната. Нажмите на кейс, чтобы увидеть содержимое и купить его.",
     inline(rows),
   );
 }
@@ -379,6 +419,33 @@ async function showInventory(chatId: number, user: User) {
   );
 }
 
+async function openCase(chatId: number, user: User, instanceId: string) {
+  const owned = user.inventory.find((entry) => entry.instanceId === instanceId);
+  const product = owned ? item(owned.catalogId) : undefined;
+  if (!owned || !product?.caseType) {
+    await sendText(chatId, "Кейс не найден в вашем инвентаре или уже открыт.", user.telegramId);
+    return;
+  }
+  const reward = pickCaseReward(product);
+  if (!reward) {
+    await sendText(chatId, "У этого кейса пока нет настроенных наград.", user.telegramId);
+    return;
+  }
+  await store.removeOwned(user, owned);
+  const won = await store.addOwned(user, reward.id);
+  const location = reward.kind === "cars" ? "в имущество → автомобили" : "в инвентарь";
+  await sendText(
+    chatId,
+    `🎉 Кейс «${product.name}» открыт!\nВам выпало: ${reward.name}\nПредмет ID: ${reward.id}\nЭкземпляр: ${won.instanceId}\nНаграда добавлена: ${location}.`,
+    user.telegramId,
+  );
+  try {
+    await telegram.sendPhoto(chatId, productPhoto(reward), `Выпало из кейса: ${reward.name}`);
+  } catch (error: unknown) {
+    logTelegramError(error, "send case reward image");
+  }
+}
+
 async function showInventoryItem(chatId: number, user: User, instanceId: string) {
   const owned = user.inventory.find((entry) => entry.instanceId === instanceId);
   if (!owned) {
@@ -387,13 +454,16 @@ async function showInventoryItem(chatId: number, user: User, instanceId: string)
   }
   const product = item(owned.catalogId);
   if (!product) return;
+  const caseText = product.caseType
+    ? `\nТип: ${product.caseType === "cars" ? "автомобильный кейс" : "кейс аксессуаров"}\nНаграды: ${product.caseRewards?.map((reward) => `${item(reward.itemId)?.name ?? "предмет"} (${reward.chance}%)`).join(", ")}`
+    : "";
+  const actions = product.caseType
+    ? [[{ text: "🎁 Открыть кейс", callback_data: `openCase:${instanceId}` }]]
+    : [[{ text: owned.equipped ? "Снять" : "Надеть", callback_data: `${owned.equipped ? "unequip" : "equip"}:${instanceId}` }]];
   await telegram.sendMessage(
     chatId,
-    `${product.name}\nID предмета: ${product.id}\nID экземпляра: ${owned.instanceId}\nСтатус: ${owned.equipped ? "надето" : "снято"}${product.passivePerSecond ? `\nБонус: +${money(product.passivePerSecond)} в секунду` : ""}`,
-    inline([
-      [{ text: owned.equipped ? "Снять" : "Надеть", callback_data: `${owned.equipped ? "unequip" : "equip"}:${instanceId}` }],
-      [{ text: "Назад в инвентарь", callback_data: "inventory" }],
-    ]),
+    `${product.name}\nID предмета: ${product.id}\nID экземпляра: ${owned.instanceId}\nСтатус: ${product.caseType ? "не открыт" : owned.equipped ? "надето" : "снято"}${product.passivePerSecond ? `\nБонус: +${money(product.passivePerSecond)} в секунду` : ""}${caseText}`,
+    inline([...actions, [{ text: "Назад в инвентарь", callback_data: "inventory" }]]),
   );
 }
 
@@ -432,16 +502,20 @@ async function showPropertyItem(chatId: number, user: User, instanceId: string) 
     await sendText(chatId, "Имущество не найдено.", user.telegramId);
     return;
   }
-  const text = `${product.name}\nID предмета: ${product.id}\nСтоимость покупки: ${money(product.price)}\nЦена продажи государству: ${money((BigInt(product.price) * 70n) / 100n)}`;
+  const governmentPrice = product.governmentSalePrice !== undefined
+    ? BigInt(product.governmentSalePrice)
+    : (BigInt(product.price) * 70n) / 100n;
+  const saleLabel = governmentPrice === 0n ? "Продать государству (0)" : "Продать государству (-30%)";
+  const text = `${product.name}\nID предмета: ${product.id}\nСтоимость покупки: ${money(product.price)}\nЦена продажи государству: ${money(governmentPrice)}`;
   try {
     await telegram.sendPhoto(chatId, productPhoto(product), text, inline([
-      [{ text: "Продать государству (-30%)", callback_data: `sellproperty:${instanceId}` }],
+      [{ text: saleLabel, callback_data: `sellproperty:${instanceId}` }],
       [{ text: "Назад к имуществу", callback_data: "property" }],
     ]));
   } catch (error: unknown) {
     logTelegramError(error, "send property image");
     await telegram.sendMessage(chatId, text, inline([
-      [{ text: "Продать государству (-30%)", callback_data: `sellproperty:${instanceId}` }],
+      [{ text: saleLabel, callback_data: `sellproperty:${instanceId}` }],
       [{ text: "Назад к имуществу", callback_data: "property" }],
     ]));
   }
@@ -450,9 +524,10 @@ async function showPropertyItem(chatId: number, user: User, instanceId: string) 
 async function showDonate(chatId: number, user: User) {
   await telegram.sendMessage(
     chatId,
-    `Донат-магазин\nВаш баланс: ${donate(user.donate)}\n\nПока доступна одна позиция:`,
+    `Донат-магазин\nВаш баланс: ${donate(user.donate)}\n\nВыберите раздел:`,
     inline([
       [{ text: "Донат-аксессуары", callback_data: "catalog:donate:0" }],
+      [{ text: "🎁 Кейсы", callback_data: "catalog:cases:0" }],
       [{ text: "Назад", callback_data: "back:profile" }],
     ]),
   );
@@ -994,7 +1069,7 @@ function assetsForTrade(user: User, _kind: "any" | "items" | "property") {
 async function showExchange(chatId: number, user: User) {
   await telegram.sendMessage(
     chatId,
-    "Обмен\n\nМожно обменять любой свой предмет на любой предмет другого игрока: папиросу на кепку, автомобиль на дом, одежду на аксессуар и так далее.",
+    "Обмен\n\nМожно обменять любой свой предмет на любой предмет другого игрока: сигару на кепку, автомобиль на дом, одежду на аксессуар и так далее.",
     inline([
       [{ text: "Создать обмен", callback_data: "exchange:any" }],
       [{ text: "Назад", callback_data: "back:profile" }],
@@ -1111,11 +1186,22 @@ async function showAdmin(chatId: number) {
       [{ text: "Выдать предмет", callback_data: "admin:item" }],
       [{ text: "Ответить на техподдержку", callback_data: "admin:support" }],
       [{ text: "📢 Рассылка всем", callback_data: "admin:broadcast" }],
+      [{ text: "📣 Реклама", callback_data: "admin:advertise" }],
+      [{ text: "👥 Пользователи бота", callback_data: "admin:users" }],
       [{ text: "Создать промокод", callback_data: "admin:promo" }],
       [{ text: "ID предметов", callback_data: "admin:ids" }],
       [{ text: "Назад", callback_data: "back:profile" }],
     ]),
   );
+}
+
+async function adminUsers(chatId: number) {
+  const lines = store.users.length
+    ? store.users.map((recipient) =>
+        `ID бота: ${recipient.userId} · TG ID: ${recipient.telegramId} · ЮЗ: ${recipient.username} · Имя: ${recipient.displayName}`,
+      )
+    : ["Пользователей пока нет."];
+  await sendLong(chatId, `Пользователи бота (${store.users.length})\n\n${lines.join("\n")}`);
 }
 
 async function adminIds(chatId: number) {
@@ -1331,6 +1417,27 @@ async function processText(chatId: number, user: User, text: string) {
     await sendText(Number(target.telegramId), `Администратор выдал вам предмет: ${item(catalogId)?.name}.`, target.telegramId);
     return;
   }
+  if (session.type === "adminAdvertiseText") {
+    const message = text.trim();
+    if (!message || message.length > 3800) {
+      await sendText(chatId, "Введите текст рекламы длиной от 1 до 3800 символов.", user.telegramId);
+      return;
+    }
+    sessions.set(user.telegramId, { type: "adminAdvertiseConfirm", text: message });
+    await telegram.sendMessage(
+      chatId,
+      `Предпросмотр рекламы\n\n📣 ${message}\n\nПолучатели: ${store.users.length}.`,
+      inline([
+        [{ text: "✅ Рекламировать", callback_data: "admin:advertise:confirm" }],
+        [{ text: "Отмена", callback_data: "admin:advertise:cancel" }],
+      ]),
+    );
+    return;
+  }
+  if (session.type === "adminAdvertiseConfirm") {
+    await sendText(chatId, "Проверьте предпросмотр и нажмите «Рекламировать» или «Отмена».", user.telegramId);
+    return;
+  }
   if (session.type === "adminBroadcast") {
     if (!isAdmin(user.telegramId)) {
       sessions.delete(user.telegramId);
@@ -1472,6 +1579,10 @@ async function handleCallback(callback: TelegramCallbackQuery) {
     else if (kind && kind in categoryLabels) await showCatalog(chatId, kind as CatalogKind);
     return;
   }
+  if (data.startsWith("catalog:cases:")) {
+    await showCases(chatId, Number(data.split(":")[2]));
+    return;
+  }
   if (data.startsWith("catalog:")) {
     const [, kind, page] = data.split(":");
     if (kind && kind in categoryLabels) await showCatalog(chatId, kind as CatalogKind, Number(page));
@@ -1500,10 +1611,15 @@ async function handleCallback(callback: TelegramCallbackQuery) {
     await showInventoryItem(chatId, user, data.slice("invitem:".length));
     return;
   }
+  if (data.startsWith("openCase:")) {
+    await openCase(chatId, user, data.slice("openCase:".length));
+    return;
+  }
   if (data.startsWith("equip:") || data.startsWith("unequip:")) {
     const instanceId = data.split(":")[1];
     const owned = user.inventory.find((entry) => entry.instanceId === instanceId);
-    if (owned) {
+    const product = owned ? item(owned.catalogId) : undefined;
+    if (owned && !product?.caseType) {
       owned.equipped = data.startsWith("equip:");
       await store.updateUser(user);
       // Refresh the profile once. Do not append the old item card or a
@@ -1753,6 +1869,24 @@ async function handleCallback(callback: TelegramCallbackQuery) {
     } else if (data === "admin:broadcast") {
       sessions.set(user.telegramId, { type: "adminBroadcast" });
       await sendText(chatId, "Введите текст рассылки для всех зарегистрированных игроков.", user.telegramId);
+    } else if (data === "admin:advertise") {
+      sessions.set(user.telegramId, { type: "adminAdvertiseText" });
+      await sendText(
+        chatId,
+        "Введите текст рекламы.\n\nПример: 🎁 Новый кейс RP CITY уже в донате — открывай и забирай редкие аксессуары и автомобили!",
+        user.telegramId,
+      );
+    } else if (data === "admin:advertise:confirm") {
+      const draft = sessions.get(user.telegramId);
+      if (!draft || draft.type !== "adminAdvertiseConfirm") return;
+      sessions.delete(user.telegramId);
+      const result = await broadcastToServer(`📣 РЕКЛАМА RP CITY\n\n${draft.text}`);
+      await sendText(chatId, `Реклама отправлена. Доставлено: ${result.sent} из ${result.total}. Ошибок: ${result.failed}.`, user.telegramId);
+    } else if (data === "admin:advertise:cancel") {
+      sessions.delete(user.telegramId);
+      await sendText(chatId, "Реклама отменена.", user.telegramId);
+    } else if (data === "admin:users") {
+      await adminUsers(chatId);
     } else if (data === "admin:promo") {
       await telegram.sendMessage(chatId, "Выберите тип промокода:", inline([
         [{ text: "На деньги", callback_data: "promo:create:money" }, { text: "На донат", callback_data: "promo:create:donate" }],

@@ -9,12 +9,23 @@ export type CatalogKind =
   | "houses"
   | "donate";
 
+export type CaseType = "accessories" | "cars";
+
+export type CaseReward = {
+  itemId: number;
+  /** Relative weight supplied by the game design. The listed values do not sum to 100. */
+  chance: number;
+};
+
 export type CatalogItem = {
   id: number;
   kind: CatalogKind;
   name: string;
   price: string;
   donatePrice?: string;
+  donateCategory?: "items" | "cases";
+  caseType?: CaseType;
+  caseRewards?: CaseReward[];
   hidden?: boolean;
   marketplaceDisabled?: boolean;
   passivePerSecond?: string;
@@ -96,15 +107,15 @@ const hatNames = brands.map((brand, index) => {
 const accessoryNames = brands.map((brand, index) =>
   index === 29 ? "Папироса RP Gold" : `${brand} ${["цепочка", "рюкзак", "очки", "браслет"][index % 4]}`,
 );
-const cigaretteNames = [
-  "Marlboro Red",
-  "Marlboro Gold",
-  "Parliament Aqua Blue",
-  "Kent Nano Silver",
-  "Winston XStyle",
-  "Camel Compact",
-  "Lucky Strike Original",
-  "Dunhill Fine Cut",
+const cigarNames = [
+  "Сигара Classic Red",
+  "Сигара Gold Reserve",
+  "Сигара Aqua Blue",
+  "Сигара Silver Edition",
+  "Сигара XStyle",
+  "Сигара Compact",
+  "Сигара Original",
+  "Сигара Fine Cut",
 ];
 
 const carNames = [
@@ -171,12 +182,47 @@ const carPrices = [
   500_000_000n,
   1_000_000_000n,
 ];
-const cars = carNames.map((name, index) => ({
-  id: 7001 + index,
-  kind: "cars" as const,
-  name,
-  price: (carPrices[index] ?? 500_000n).toString(),
-}));
+const cars = [
+  ...carNames.map((name, index) => ({
+    id: 7001 + index,
+    kind: "cars" as const,
+    name,
+    price: (carPrices[index] ?? 500_000n).toString(),
+    marketplaceDisabled: true,
+    governmentSalePrice: "0",
+  })),
+  {
+    id: 7041,
+    kind: "cars" as const,
+    name: "Ford Mustang Shelby GT500",
+    price: "80000000",
+    marketplaceDisabled: true,
+    governmentSalePrice: "0",
+  },
+  {
+    id: 7042,
+    kind: "cars" as const,
+    name: "Bugatti Divo",
+    price: "400000000",
+    marketplaceDisabled: true,
+    governmentSalePrice: "0",
+  },
+];
+
+const caseAccessories: CatalogItem[] = [
+  { id: 6101, kind: "accessories", name: "Кольцо RP Gold", price: "9000000", marketplaceDisabled: true, governmentSalePrice: "0" },
+  { id: 6102, kind: "accessories", name: "Платиновый браслет", price: "12000000", marketplaceDisabled: true, governmentSalePrice: "0" },
+  { id: 6103, kind: "accessories", name: "Платиновая цепочка", price: "18000000", marketplaceDisabled: true, governmentSalePrice: "0" },
+  { id: 6104, kind: "accessories", name: "Золотые очки", price: "25000000", marketplaceDisabled: true, governmentSalePrice: "0" },
+  { id: 6105, kind: "accessories", name: "Платиновые очки", price: "45000000", marketplaceDisabled: true, governmentSalePrice: "0" },
+  { id: 6106, kind: "accessories", name: "Серебряная сигара", price: "10000000", passivePerSecond: "10000", marketplaceDisabled: true, governmentSalePrice: "0" },
+  { id: 6107, kind: "accessories", name: "Золотая сигара", price: "100000000", passivePerSecond: "100000000", marketplaceDisabled: true, governmentSalePrice: "0" },
+  { id: 6108, kind: "accessories", name: "Платиновая сигара", price: "1000000000", passivePerSecond: "1000000000", marketplaceDisabled: true, governmentSalePrice: "0" },
+];
+
+const caseCars: CatalogItem[] = [
+  { id: 7778, kind: "cars", name: "Детский автомобиль", price: "300000", hidden: true, marketplaceDisabled: true, governmentSalePrice: "0" },
+];
 const houseNames = [
   "Место под мостом",
   "Комната в общежитии",
@@ -218,17 +264,24 @@ export const catalog: CatalogItem[] = [
   ...generated("hats", 5001, hatNames, 1_000_000n, 1_000_000_000n),
   ...generated("accessories", 6001, accessoryNames, 100_000n, 1_000_000_000n).map((item, index) =>
     index === 29
-       ? {
-           ...item,
-           id: 6767,
-           name: "Золотая папироса",
-           passivePerSecond: "100000000",
-           marketplaceDisabled: true,
-         }
-      : item,
+      ? {
+          ...item,
+          id: 6767,
+          name: "Золотая сигара",
+          passivePerSecond: "100000000",
+          marketplaceDisabled: true,
+          governmentSalePrice: "0",
+        }
+      : { ...item, marketplaceDisabled: true, governmentSalePrice: "0" },
   ),
-  ...generated("accessories", 6801, cigaretteNames, 50_000n, 5_000_000n),
+  ...generated("accessories", 6801, cigarNames, 50_000n, 5_000_000n).map((item) => ({
+    ...item,
+    marketplaceDisabled: true,
+    governmentSalePrice: "0",
+  })),
+  ...caseAccessories,
   ...cars,
+  ...caseCars,
   ...generated("houses", 8001, houseNames, 100_000n, 100_000_000_000n),
   {
     id: 67,
@@ -254,6 +307,47 @@ export const catalog: CatalogItem[] = [
     name: "Золотая цепочка",
     price: "0",
     donatePrice: "1000",
+    donateCategory: "items",
+    marketplaceDisabled: true,
+    governmentSalePrice: "0",
+  },
+  {
+    id: 9002,
+    kind: "donate",
+    name: "Кейс аксессуаров",
+    price: "0",
+    donatePrice: "2000",
+    donateCategory: "cases",
+    caseType: "accessories",
+    marketplaceDisabled: true,
+    caseRewards: [
+      { itemId: 6101, chance: 90 },
+      { itemId: 6102, chance: 77 },
+      { itemId: 6103, chance: 66 },
+      { itemId: 6104, chance: 50 },
+      { itemId: 6105, chance: 30 },
+      { itemId: 6106, chance: 10 },
+      { itemId: 6107, chance: 0.5 },
+      { itemId: 6108, chance: 0.1 },
+    ],
+  },
+  {
+    id: 9003,
+    kind: "donate",
+    name: "Автомобильный кейс",
+    price: "0",
+    donatePrice: "2000",
+    donateCategory: "cases",
+    caseType: "cars",
+    marketplaceDisabled: true,
+    caseRewards: [
+      { itemId: 7041, chance: 80 },
+      { itemId: 7042, chance: 50 },
+      { itemId: 7027, chance: 67 },
+      { itemId: 7778, chance: 30 },
+      { itemId: 7777, chance: 0.5 },
+      { itemId: 67, chance: 0.1 },
+    ],
   },
 ];
 

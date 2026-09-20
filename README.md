@@ -35,7 +35,9 @@ Railway provides `PORT` automatically. The server listens on it and starts the b
 - Marketplace displays other players listings and your own listings; your listing can be cancelled and the asset is returned.
 - Exchange supports items, cars and houses. After both assets are selected, the initiator enters an extra payment; enter 0 for a free exchange. Both players confirm before coins and assets move.
 - Profile has a bottom keyboard action to enter another player ID and see equipped clothing, inventory and property.
-- Catalog previews are locally drawn item cards, so Telegram no longer depends on old stock-photo URLs. The catalog includes a thicker golden cigarette with a 100,000,000-coin passive bonus, a small children's airplane (ID 7777), and a police Bat-mobile illustration with red/blue emergency lights. The golden cigarette, airplane and Bat-mobile are not available on the player marketplace; the Bat-mobile remains available through admin grants.
+- Catalog previews are locally drawn item cards, so Telegram no longer depends on old stock-photo URLs. The catalog includes thick drawn cigars, case-exclusive accessories and cars, a small children's airplane (ID 7777), and a police Bat-mobile illustration with red/blue emergency lights. Cars and accessories have zero government buyback and are blocked from the player marketplace.
+- The donation shop includes an accessory case and an automobile case for 2,000 donation each. Purchased cases go to inventory, can be opened once, and announce the reward in chat; cars go to property and accessories go to inventory.
+- Admins can preview and send an advertisement to registered bot chats and view the bot's users with internal IDs, Telegram IDs and usernames.
 
 ## Local commands
 
